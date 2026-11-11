@@ -94,6 +94,7 @@ fn start_with(dir: &TempDir, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
             speed: 8.0,
             capture,
         },
+        watch_folders: false,
     })
     .unwrap()
 }
@@ -516,4 +517,58 @@ fn normalization_applies_the_measured_loudness() {
     let i = 10_000;
     let want = f32::from(sample(1, i as u32)) / 32768.0 * gain;
     assert!((out[i] - want).abs() < 1e-6, "{} vs {want}", out[i]);
+}
+
+fn next_scan(engine: &Engine) -> dap_engine::ScanSummary {
+    let events = wait_for(engine, |e| matches!(e, Event::ScanFinished(_)));
+    match events.last() {
+        Some(Event::ScanFinished(s)) => s.clone(),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn watched_folders_are_rescanned_on_start_and_on_change() {
+    let dir = TempDir::new("watch");
+    write_wav(&dir.music().join("old.wav"), 1, 4410);
+    let _ = scan(&dir);
+    // Added while the app was not running: found by the scan on start.
+    write_wav(&dir.music().join("offline.wav"), 2, 4410);
+
+    let engine = Engine::start(EngineConfig {
+        db_path: dir.db(),
+        output: OutputConfig::Null {
+            sample_rate: RATE,
+            channels: 1,
+            speed: 8.0,
+            capture: None,
+        },
+        watch_folders: true,
+    })
+    .unwrap();
+    let s = next_scan(&engine);
+    assert_eq!((s.added, s.unchanged), (1, 1), "{s:?}");
+
+    // Changes while running: picked up after the folder has been quiet for a moment.
+    let started = Instant::now();
+    std::fs::create_dir_all(dir.music().join("new album")).unwrap();
+    write_wav(&dir.music().join("new album/01.wav"), 3, 4410);
+    write_wav(&dir.music().join("new album/02.wav"), 4, 4410);
+    let s = next_scan(&engine);
+    assert_eq!(s.added, 2, "{s:?}");
+    assert!(started.elapsed() >= dap_engine::watcher::QUIET);
+
+    std::fs::remove_file(dir.music().join("old.wav")).unwrap();
+    let s = next_scan(&engine);
+    assert_eq!(s.missing, 1, "{s:?}");
+
+    // Files the library ignores do not trigger a scan.
+    std::fs::write(dir.music().join("notes.txt"), b"hello").unwrap();
+    let quiet_until = Instant::now() + dap_engine::watcher::QUIET + Duration::from_secs(2);
+    while Instant::now() < quiet_until {
+        if let Ok(e) = engine.events().recv_timeout(Duration::from_millis(100)) {
+            assert!(!matches!(e, Event::ScanFinished(_)), "unexpected scan");
+        }
+    }
+    engine.shutdown();
 }

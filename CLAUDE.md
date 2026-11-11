@@ -71,6 +71,7 @@ Hotovo: knihovna (sken, tagy, hledání), fronta v DB, gapless (dva decky), 10p�
 do Flutteru ověřený integračním testem na Windows, ověřovací UI, ovládání médií (Windows SMTC
 v Rustu ověřené testem, Android `audio_service`), crossfade s vyrovnáním hlasitosti
 (EBU R128, −18 LUFS, analýza na pozadí; navazující skladby alba gapless), obaly alb (z tagů
-nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci).
-Zbývá do MVP: ověření na Android zařízení (včetně přehrávání se zhasnutým displejem),
-sledování složek (notify), návrh UI.
+nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci), sledování složek
+(notify, debounce 3 s, sken jen dotčených kořenů + sken při startu).
+Zbývá do MVP: ověření na Android zařízení (přehrávání se zhasnutým displejem, sledování složek
+na sdíleném úložišti), návrh UI.

@@ -111,7 +111,12 @@ class PlayerController extends ChangeNotifier {
         scanning = false;
         libraryVersion++;
         final s = e.scanSummary;
-        if (s != null) {
+        // Scans on start and on folder changes stay silent unless something changed.
+        final changed =
+            s != null &&
+            (s.cancelled ||
+                s.added + s.updated + s.moved + s.missing + s.failed > 0);
+        if (s != null && changed) {
           messages.add(
             s.cancelled
                 ? 'Skenování zrušeno'

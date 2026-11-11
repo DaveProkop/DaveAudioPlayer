@@ -80,6 +80,7 @@ fn main() {
     let engine = Engine::start(EngineConfig {
         db_path: db_path.clone(),
         output: OutputConfig::Device,
+        watch_folders: true,
     })
     .unwrap_or_else(|e| {
         eprintln!("{e}");

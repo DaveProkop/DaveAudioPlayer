@@ -78,6 +78,17 @@ Pravidla:
 - velké seznamy stránkovaně, Flutter virtualizuje
 - obaly přes cestu k souboru v cache, ne jako bajty přes most
 
+## Sledování složek
+Vlákno `folder-watch` (engine, crate `notify`: ReadDirectoryChangesW / inotify) sleduje
+povolené kořeny knihovny rekurzivně. Změna audio souboru, obrázku nebo složky označí její
+kořen; po 3 s klidu (nejvýš 30 s od první změny) řídicí vlákno spustí inkrementální sken jen
+dotčených kořenů. Požadavky během běžícího skenu se slučují do dalšího průchodu. Při startu
+aplikace proběhne sken všech kořenů (zachytí změny, když aplikace neběžela). Automatické
+skeny nehlásí nedostupnou složku (odpojený disk) a UI je zobrazí jen, když se něco změnilo.
+Nesledovatelné kořeny se zkouší znovu každou minutu. Android: inotify nad sdíleným úložištěm
+(FUSE) nemusí hlásit změny od jiných aplikací spolehlivě – sken při startu je pojistka;
+ověřit na zařízení, případně doplnit `MediaStore` ContentObserver.
+
 ## Obaly alb
 Sken (`dap_library::covers`) bere obal z tagů (přední strana, jinak první obrázek), jinak
 obrázek ve složce (`cover`, `folder`, `front`, `album`, `albumart` + jpg/png/webp/bmp).

@@ -6,6 +6,7 @@
 //! - audio callback: the mixer, real-time safe
 //! - database writer (`db-writer`): every write to SQLite
 //! - loudness analysis (`analysis`): EBU R128 measurement of upcoming and other tracks
+//! - folder watching (`folder-watch`): rescans library folders that changed
 
 pub mod analyzer;
 pub mod db_writer;
@@ -13,6 +14,7 @@ mod deck;
 pub mod engine;
 pub mod output;
 pub mod queue;
+pub mod watcher;
 
 pub use db_writer::DbWriter;
 pub use engine::{

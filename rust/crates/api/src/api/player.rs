@@ -46,6 +46,7 @@ pub fn start_engine(db_path: String) -> Result<()> {
     let engine = Engine::start(EngineConfig {
         db_path: path.clone(),
         output: OutputConfig::Device,
+        watch_folders: true,
     })
     .map_err(|e| anyhow!(e))?;
     let (out, events) = unbounded();

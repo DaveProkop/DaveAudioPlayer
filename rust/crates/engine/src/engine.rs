@@ -8,8 +8,9 @@
 //! current deck as soon as its exact length is known; consecutive tracks of one album stay
 //! gapless. Loudness normalization sets each deck's gain from the stored EBU R128 analysis.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -20,12 +21,13 @@ use dap_dsp::gain::db_to_gain;
 use dap_dsp::eq::BAND_COUNT;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
-use dap_library::{ScanJob, ScanReport, add_root};
+use dap_library::{DbError, ScanJob, ScanReport, add_root};
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::analyzer::{Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
+use crate::watcher::FolderWatcher;
 use crate::deck::{DeckInfo, spawn_deck};
 use crate::output::{self, Output, OutputConfig};
 use crate::queue::{Queue, QueueEntry};
@@ -47,6 +49,8 @@ const MIN_FADE_MS: u64 = 10;
 pub struct EngineConfig {
     pub db_path: PathBuf,
     pub output: OutputConfig,
+    /// Rescan the library on start and whenever the music folders change.
+    pub watch_folders: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -282,6 +286,7 @@ struct Control {
     next_token: u64,
     scan: ScanState,
     analyzer: Option<Analyzer>,
+    watcher: Option<FolderWatcher>,
     /// Where scans store cover images.
     covers: PathBuf,
     settings: PlayerSettings,
@@ -289,10 +294,50 @@ struct Control {
     plan_sent: Option<TransitionPlan>,
 }
 
+/// Which library roots a scan covers.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum ScanScope {
+    #[default]
+    Nothing,
+    Roots(BTreeSet<i64>),
+    All,
+}
+
+impl ScanScope {
+    fn merge(&mut self, other: ScanScope) {
+        *self = match (std::mem::take(self), other) {
+            (ScanScope::All, _) | (_, ScanScope::All) => ScanScope::All,
+            (ScanScope::Nothing, o) | (o, ScanScope::Nothing) => o,
+            (ScanScope::Roots(mut a), ScanScope::Roots(b)) => {
+                a.extend(b);
+                ScanScope::Roots(a)
+            }
+        };
+    }
+
+    fn includes(&self, root_id: i64) -> bool {
+        match self {
+            ScanScope::Nothing => false,
+            ScanScope::Roots(r) => r.contains(&root_id),
+            ScanScope::All => true,
+        }
+    }
+}
+
+/// Scan requests waiting for the scan thread. Requests arriving during a scan are merged
+/// and run as one more pass.
+#[derive(Default)]
+struct ScanQueue {
+    scope: ScanScope,
+    /// Every merged request came from the app itself (start, folder watching), not the
+    /// user: an unreachable folder is then not reported as an error.
+    automatic: bool,
+    running: bool,
+}
+
 #[derive(Default)]
 struct ScanState {
-    running: Arc<AtomicBool>,
-    again: Arc<AtomicBool>,
+    queue: Arc<Mutex<ScanQueue>>,
     cancel: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -346,14 +391,32 @@ impl Control {
             next_token: 1,
             scan: ScanState::default(),
             analyzer,
+            watcher: None,
             covers: dap_library::covers::covers_dir(&config.db_path),
             settings,
             plan_sent: None,
         };
+        let mut control = control;
         control.emit(Event::Settings(control.settings));
         control.emit(Event::Queue(control.queue.entries()));
         control.emit_state();
         control.prioritize_analysis();
+        if config.watch_folders {
+            // Watching starts before the scan, so nothing changed meanwhile is missed.
+            match FolderWatcher::start(&config.db_path, control.covers.clone()) {
+                Ok(w) => control.watcher = Some(w),
+                Err(e) => control.emit(Event::Error(e)),
+            }
+            let has_roots = control
+                .reader
+                .query_row("SELECT EXISTS (SELECT 1 FROM library_root)", [], |r| {
+                    r.get::<_, bool>(0)
+                })
+                .unwrap_or(false);
+            if has_roots {
+                control.start_scan(ScanScope::All, true);
+            }
+        }
         Ok(control)
     }
 
@@ -366,6 +429,7 @@ impl Control {
             }
             self.drain_mixer_events();
             self.drain_analysis();
+            self.drain_folder_changes();
             self.update_transition();
         }
         if self.status == Status::Playing {
@@ -376,6 +440,7 @@ impl Control {
         if let Some(t) = self.scan.thread.take() {
             let _ = t.join(); // it holds a writer handle
         }
+        self.watcher = None;
         self.analyzer = None; // stops and joins; it writes through the writer
         self.output = None; // stop audio before the decks go away
         self.current = None;
@@ -664,6 +729,20 @@ impl Control {
         }
     }
 
+    /// Changed library folders are rescanned (incrementally).
+    fn drain_folder_changes(&mut self) {
+        let Some(watcher) = &self.watcher else {
+            return;
+        };
+        let mut roots = BTreeSet::new();
+        for changed in watcher.changed.try_iter() {
+            roots.extend(changed);
+        }
+        if !roots.is_empty() {
+            self.start_scan(ScanScope::Roots(roots), true);
+        }
+    }
+
     fn save_setting(&self, key: &'static str, value: String) {
         self.db.run(move |c| {
             let _ = c.execute(
@@ -845,23 +924,39 @@ impl Control {
             Command::AddFolder(path) => {
                 let result = self.db.call(move |c| add_root(c, &path));
                 match result {
-                    Some(Ok(_)) => self.start_scan(),
+                    Some(Ok(_)) => {
+                        if let Some(w) = &self.watcher {
+                            w.refresh();
+                        }
+                        self.start_scan(ScanScope::All, false)
+                    }
                     Some(Err(e)) => self.emit(Event::Error(e.to_string())),
                     None => {}
                 }
             }
-            Command::RescanLibrary => self.start_scan(),
+            Command::RescanLibrary => self.start_scan(ScanScope::All, false),
             Command::CancelScan => self.scan.cancel.store(true, Ordering::Relaxed),
             Command::Shutdown => {}
         }
     }
 
-    /// Scans all folders on a coordinator thread; each batch runs as its own writer job.
-    /// A request during a running scan makes it run once more when done.
-    fn start_scan(&mut self) {
-        if self.scan.running.swap(true, Ordering::AcqRel) {
-            self.scan.again.store(true, Ordering::Release);
-            return;
+    /// Scans folders on a coordinator thread; each batch runs as its own writer job.
+    /// A request during a running scan is merged into one more pass.
+    fn start_scan(&mut self, scope: ScanScope, automatic: bool) {
+        {
+            let Ok(mut q) = self.scan.queue.lock() else {
+                return;
+            };
+            q.automatic = if q.scope == ScanScope::Nothing {
+                automatic
+            } else {
+                q.automatic && automatic
+            };
+            q.scope.merge(scope);
+            if q.running {
+                return;
+            }
+            q.running = true;
         }
         if let Some(t) = self.scan.thread.take() {
             let _ = t.join();
@@ -870,28 +965,31 @@ impl Control {
         let db = self.db.clone();
         let events = self.events.clone();
         let covers = self.covers.clone();
-        let (running, again, cancel) = (
-            self.scan.running.clone(),
-            self.scan.again.clone(),
-            self.scan.cancel.clone(),
-        );
+        let (queue, cancel) = (self.scan.queue.clone(), self.scan.cancel.clone());
         let spawned = std::thread::Builder::new()
             .name("library-scan".into())
             .spawn(move || {
                 loop {
-                    again.store(false, Ordering::Release);
-                    let summary = scan_all(&db, &events, &cancel, &covers);
+                    let (scope, automatic) = {
+                        let Ok(mut q) = queue.lock() else { return };
+                        if q.scope == ScanScope::Nothing || cancel.load(Ordering::Relaxed) {
+                            q.scope = ScanScope::Nothing;
+                            q.running = false;
+                            return;
+                        }
+                        (std::mem::take(&mut q.scope), q.automatic)
+                    };
+                    let summary = scan_roots(&db, &events, &cancel, &covers, &scope, automatic);
                     let _ = events.send(Event::ScanFinished(summary));
-                    if cancel.load(Ordering::Relaxed) || !again.load(Ordering::Acquire) {
-                        break;
-                    }
                 }
-                running.store(false, Ordering::Release);
             });
         match spawned {
             Ok(t) => self.scan.thread = Some(t),
             Err(e) => {
-                self.scan.running.store(false, Ordering::Release);
+                if let Ok(mut q) = self.scan.queue.lock() {
+                    q.scope = ScanScope::Nothing;
+                    q.running = false;
+                }
                 self.emit(Event::Error(format!("cannot start scan: {e}")));
             }
         }
@@ -1013,11 +1111,13 @@ fn read_setting(conn: &Connection, key: &str) -> Option<i64> {
     .and_then(|v| v.trim().parse().ok())
 }
 
-fn scan_all(
+fn scan_roots(
     db: &DbWriter,
     events: &Sender<Event>,
     cancel: &Arc<AtomicBool>,
     covers: &std::path::Path,
+    scope: &ScanScope,
+    automatic: bool,
 ) -> ScanSummary {
     let mut summary = ScanSummary::default();
     let roots: Vec<(i64, String)> = db
@@ -1030,7 +1130,7 @@ fn scan_all(
                 .unwrap_or_default()
         })
         .unwrap_or_default();
-    for (root_id, path) in roots {
+    for (root_id, path) in roots.into_iter().filter(|(id, _)| scope.includes(*id)) {
         if cancel.load(Ordering::Relaxed) {
             summary.cancelled = true;
             break;
@@ -1039,6 +1139,8 @@ fn scan_all(
         // Walking the folder is file-system work only; it stays off the writer thread.
         let mut job = match ScanJob::walk(root_id, folder.clone()) {
             Ok(j) => j.with_covers(covers.to_path_buf()),
+            // An unplugged drive is normal when the app scans on its own.
+            Err(DbError::RootUnavailable(_)) if automatic => continue,
             Err(e) => {
                 let _ = events.send(Event::Error(e.to_string()));
                 continue;
