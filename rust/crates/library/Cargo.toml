@@ -1,0 +1,13 @@
+[package]
+name = "dap-library"
+description = "Folder scanner, SQLite library, full-text search and playlists"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rusqlite = { version = "0.42.0", features = ["bundled"] }

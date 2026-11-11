@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/DaveProkop/DaveAudioPlayer"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+dap-audio-io = { path = "crates/audio-io" }
+dap-dsp = { path = "crates/dsp" }
+dap-mixer = { path = "crates/mixer" }
+dap-analysis = { path = "crates/analysis" }
+dap-library = { path = "crates/library" }
+dap-tags = { path = "crates/tags" }
+dap-metadata = { path = "crates/metadata" }
+dap-engine = { path = "crates/engine" }
+
+[profile.dev]
+# Audio code is unusable without optimizations, even while debugging.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
