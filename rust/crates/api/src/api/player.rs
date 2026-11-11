@@ -1,17 +1,30 @@
 //! Engine lifecycle, player and queue commands, and the event stream.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use dap_dsp::eq::BAND_COUNT;
 use dap_engine::{Command, Engine, EngineConfig, Event, OutputConfig, PlayerState, Status};
 use flutter_rust_bridge::frb;
+use rusqlite::Connection;
 
 use crate::frb_generated::StreamSink;
+use crate::media_controls::{MediaControls, Playback, TrackMeta};
 
-static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
+/// A running engine plus the hub thread that fans its events out to the OS media
+/// controls and to Dart.
+struct Running {
+    engine: Engine,
+    /// Engine events after the hub, for [`app_events`].
+    events: Receiver<Event>,
+    hub: Option<JoinHandle<()>>,
+}
+
+static ENGINE: Mutex<Option<Running>> = Mutex::new(None);
 pub(crate) static DB_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 #[frb(init)]
@@ -35,7 +48,18 @@ pub fn start_engine(db_path: String) -> Result<()> {
         output: OutputConfig::Device,
     })
     .map_err(|e| anyhow!(e))?;
-    *guard = Some(engine);
+    let (out, events) = unbounded();
+    let hub = {
+        let (input, commands, db) = (engine.events().clone(), engine.commands(), path.clone());
+        std::thread::Builder::new()
+            .name("event-hub".into())
+            .spawn(move || run_hub(input, out, commands, &db))?
+    };
+    *guard = Some(Running {
+        engine,
+        events,
+        hub: Some(hub),
+    });
     *DB_PATH.lock().map_err(|_| anyhow!("lock poisoned"))? = Some(path);
     Ok(())
 }
@@ -43,8 +67,12 @@ pub fn start_engine(db_path: String) -> Result<()> {
 /// Saves the player state and stops all engine threads.
 pub fn stop_engine() {
     if let Ok(mut guard) = ENGINE.lock() {
-        if let Some(engine) = guard.take() {
-            engine.shutdown();
+        if let Some(mut running) = guard.take() {
+            running.engine.shutdown();
+            // The engine's event channel is closed now, so the hub finishes.
+            if let Some(hub) = running.hub.take() {
+                let _ = hub.join();
+            }
         }
     }
     super::library::close_reader();
@@ -58,6 +86,7 @@ fn send(cmd: Command) -> Result<()> {
     guard
         .as_ref()
         .ok_or_else(|| anyhow!("engine is not running"))?
+        .engine
         .send(cmd);
     Ok(())
 }
@@ -155,6 +184,45 @@ pub fn cancel_scan() -> Result<()> {
 }
 
 // ----- events ----------------------------------------------------------------------
+
+/// Forwards every engine event to `out` and mirrors player state into the OS media
+/// controls. Ends when the engine stops.
+fn run_hub(input: Receiver<Event>, out: Sender<Event>, commands: Sender<Command>, db: &Path) {
+    let mut controls = match MediaControls::new(commands) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            let _ = out.send(Event::Error(format!("media controls unavailable: {e}")));
+            None
+        }
+    };
+    let mut reader: Option<Connection> = None;
+    // `None` = nothing shown yet, so the first state always sets the display.
+    let mut shown: Option<Option<i64>> = None;
+    for event in input {
+        if let (Event::State(s), Some(c)) = (&event, controls.as_mut()) {
+            let track = s.entry.map(|e| e.track_id);
+            if shown != Some(track) {
+                let meta = track.and_then(|id| track_meta(&mut reader, db, id));
+                let _ = c.set_track(meta.as_ref());
+                shown = Some(track);
+            }
+            let _ = c.set_playback(&Playback::from_state(s));
+        }
+        let _ = out.send(event);
+    }
+}
+
+fn track_meta(reader: &mut Option<Connection>, db: &Path, id: i64) -> Option<TrackMeta> {
+    if reader.is_none() {
+        *reader = dap_library::db::open_reader(db).ok();
+    }
+    let t = super::library::query_track(reader.as_ref()?, id).ok()??;
+    Some(TrackMeta {
+        title: t.title,
+        artist: t.artist,
+        album: t.album,
+    })
+}
 
 pub enum PlayStatus {
     Stopped,
@@ -311,7 +379,7 @@ pub fn app_events(sink: StreamSink<AppEvent>) -> Result<()> {
         guard
             .as_ref()
             .ok_or_else(|| anyhow!("engine is not running"))?
-            .events()
+            .events
             .clone()
     };
     std::thread::Builder::new()

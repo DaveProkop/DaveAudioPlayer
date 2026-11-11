@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'src/rust/api/library.dart';
 import 'src/rust/api/player.dart';
+import 'src/rust/api/player.dart' as rust show setVolume;
 
 /// Mirrors the Rust engine state for the UI. Fed by the engine event stream; the playback
 /// position is extrapolated locally from (position, timestamp, rate) instead of being
@@ -43,6 +44,25 @@ class PlayerController extends ChangeNotifier {
 
   bool get isPlaying => state?.status == PlayStatus.playing;
 
+  /// User volume 0–1; ducking (another app speaking) lowers the output temporarily.
+  double volume = 1.0;
+  bool _ducked = false;
+
+  Future<void> setVolume(double v) async {
+    volume = v;
+    notifyListeners();
+    await _applyVolume();
+  }
+
+  Future<void> setDucked(bool ducked) async {
+    if (_ducked == ducked) return;
+    _ducked = ducked;
+    await _applyVolume();
+  }
+
+  Future<void> _applyVolume() =>
+      rust.setVolume(volume: _ducked ? volume * 0.3 : volume);
+
   int? get currentIndex => state?.index;
 
   TrackInfo? get currentTrack {
@@ -72,7 +92,9 @@ class PlayerController extends ChangeNotifier {
         await _loadMissingTracks();
       case AppEventKind.trackFailed:
         final t = e.trackId == null ? null : _tracks[e.trackId!];
-        messages.add('Přeskočeno: ${t?.title ?? 'skladba'} (${e.message ?? ''})');
+        messages.add(
+          'Přeskočeno: ${t?.title ?? 'skladba'} (${e.message ?? ''})',
+        );
       case AppEventKind.error:
         messages.add('Chyba: ${e.message ?? ''}');
       case AppEventKind.scanProgress:
@@ -85,19 +107,26 @@ class PlayerController extends ChangeNotifier {
         libraryVersion++;
         final s = e.scanSummary;
         if (s != null) {
-          messages.add(s.cancelled
-              ? 'Skenování zrušeno'
-              : 'Knihovna: +${s.added} nových, ${s.updated} změněných, '
-                  '${s.missing} chybějících, ${s.failed} chyb');
+          messages.add(
+            s.cancelled
+                ? 'Skenování zrušeno'
+                : 'Knihovna: +${s.added} nových, ${s.updated} změněných, '
+                      '${s.missing} chybějících, ${s.failed} chyb',
+          );
         }
     }
     notifyListeners();
   }
 
   Future<void> _loadMissingTracks() async {
-    final missing = queue.map((q) => q.trackId).where((id) => !_tracks.containsKey(id)).toSet();
+    final missing = queue
+        .map((q) => q.trackId)
+        .where((id) => !_tracks.containsKey(id))
+        .toSet();
     if (missing.isEmpty) return;
-    for (final t in await tracksByIds(ids: Int64List.fromList(missing.toList()))) {
+    for (final t in await tracksByIds(
+      ids: Int64List.fromList(missing.toList()),
+    )) {
       _tracks[t.id] = t;
     }
   }

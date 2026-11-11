@@ -94,18 +94,23 @@ pub fn search(query: String, limit: u32) -> Result<Vec<TrackInfo>> {
     tracks_by_ids(ids)
 }
 
+/// One track by id, on any connection (also used by the media controls).
+pub(crate) fn query_track(c: &Connection, id: i64) -> rusqlite::Result<Option<TrackInfo>> {
+    let sql = format!("SELECT {TRACK_COLUMNS} {TRACK_JOINS} WHERE t.id = ?1");
+    let mut st = c.prepare_cached(&sql)?;
+    match st.query_row([id], row_to_track) {
+        Ok(t) => Ok(Some(t)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Tracks in the order of `ids` (unknown ids are skipped).
 pub fn tracks_by_ids(ids: Vec<i64>) -> Result<Vec<TrackInfo>> {
     with_reader(|c| {
-        let sql = format!("SELECT {TRACK_COLUMNS} {TRACK_JOINS} WHERE t.id = ?1");
-        let mut st = c.prepare_cached(&sql)?;
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
-            match st.query_row([id], row_to_track) {
-                Ok(t) => out.push(t),
-                Err(rusqlite::Error::QueryReturnedNoRows) => {}
-                Err(e) => return Err(e),
-            }
+            out.extend(query_track(c, id)?);
         }
         Ok(out)
     })

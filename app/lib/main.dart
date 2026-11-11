@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import 'package:flutter/material.dart';
 
+import 'media_session.dart';
 import 'platform.dart';
 import 'player_controller.dart';
 import 'src/rust/api/library.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
   try {
     final dir = await AppPlatform.dataDir();
     await controller.start('$dir/library.db');
+    await MediaSession.start(controller);
   } catch (e) {
     startupError = e.toString();
   }
@@ -400,7 +402,6 @@ class PlayerBar extends StatefulWidget {
 class _PlayerBarState extends State<PlayerBar> {
   Timer? _tick;
   double? _dragMs;
-  double _volume = 1.0;
 
   @override
   void initState() {
@@ -481,11 +482,8 @@ class _PlayerBarState extends State<PlayerBar> {
                       const Icon(Icons.volume_up, size: 20),
                       Expanded(
                         child: Slider(
-                          value: _volume,
-                          onChanged: (v) {
-                            setState(() => _volume = v);
-                            player.setVolume(volume: v);
-                          },
+                          value: widget.controller.volume,
+                          onChanged: (v) => widget.controller.setVolume(v),
                         ),
                       ),
                     ]),

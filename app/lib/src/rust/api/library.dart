@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `close_reader`, `row_to_track`, `with_reader`
+// These functions are ignored because they are not marked as `pub`: `close_reader`, `query_track`, `row_to_track`, `with_reader`
 
 /// Number of playable tracks.
 Future<int> trackCount() => RustLib.instance.api.crateApiLibraryTrackCount();

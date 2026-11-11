@@ -64,11 +64,16 @@ Pravidla:
 
 ## Platformní specifika
 **Android:** engine ve stejném procesu, foreground service přes `audio_service`, audio focus
-(hovor, navigace), pauza při odpojení sluchátek, AAudio na nativních 48 kHz.
+(hovor, navigace) a pauza při odpojení sluchátek přes `audio_session`, AAudio na nativních 48 kHz.
+`DapAudioHandler` (app/lib/media_session.dart) jen přeposílá příkazy do Rustu a zrcadlí stav
+(pozice + čas + rychlost) do `playbackState`.
 Složky přes oprávnění `READ_MEDIA_AUDIO` (Android 13+, starší `READ_EXTERNAL_STORAGE`) – Rust dostává
 běžné cesty, skener (`walkdir`, `notify`) funguje stejně jako na Windows. Storage Access Framework
 se nepoužívá (URI místo cest by vyžadovaly procházení v Kotlinu a předávání file descriptorů).
 
-**Windows:** WASAPI shared (volitelně exclusive), SMTC pro media klávesy.
+**Windows:** WASAPI shared (volitelně exclusive). SMTC (media klávesy, přehled „Právě hraje“) řídí
+přímo Rust jádro (crate `windows`, `dap_api::media_controls`): vlákno `event-hub` rozesílá
+události enginu do SMTC i do Dartu, tlačítka SMTC jdou do enginu jako běžné příkazy.
+`audio_service` Windows nepodporuje.
 
 **Obecně:** catch panic na hranici FFI, chyba dekódování = skip tracku.

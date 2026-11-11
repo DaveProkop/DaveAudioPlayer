@@ -176,6 +176,11 @@ impl Engine {
         let _ = self.tx.send(cmd);
     }
 
+    /// A command sender for other threads (OS media controls and the like).
+    pub fn commands(&self) -> Sender<Command> {
+        self.tx.clone()
+    }
+
     pub fn events(&self) -> &Receiver<Event> {
         &self.events
     }

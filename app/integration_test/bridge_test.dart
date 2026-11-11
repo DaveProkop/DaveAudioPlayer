@@ -3,7 +3,6 @@
 //
 //   flutter test integration_test -d windows
 
-import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data' as td;
@@ -46,6 +45,7 @@ void main() {
 
   testWidgets('Rust core works through the bridge', (tester) async {
     await tester.runAsync(() async {
+      // ignore: avoid_print
       void step(String s) => print('[bridge] $s');
       step('init');
       await RustLib.init();

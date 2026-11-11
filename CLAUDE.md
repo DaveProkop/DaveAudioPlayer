@@ -20,7 +20,8 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a ověřovací
 - Hlavní Rust crate: symphonia (dekódování), cpal (výstup WASAPI/AAudio), rubato (resampling),
   rtrb (lock-free fronty), crossbeam-channel, rusqlite (bundled, FTS5), lofty (tagy),
   ebur128, signalsmith-stretch (time-stretch, MIT), rusty-chromaprint, reqwest + tokio, notify, walkdir.
-- Flutter: `audio_service` pro foreground service (Android), notifikaci, lock screen, SMTC (Windows).
+- Flutter: `audio_service` + `audio_session` pro Android (foreground service, notifikace, lock screen,
+  audio focus). Windows SMTC je v Rustu (crate `windows`, modul `dap_api::media_controls`).
 - Databáze: SQLite ve WAL režimu, jedno zapisující vlákno, více čtecích spojení.
 - Android: přístup ke složkám přes `READ_MEDIA_AUDIO` a běžné cesty, ne SAF.
 - Opus se v MVP nepodporuje (symphonia ho nemá); doplní se později přes libopus.
@@ -66,6 +67,8 @@ DaveAudioPlayer/
 
 ## Stav a další krok
 Hotovo: knihovna (sken, tagy, hledání), fronta v DB, gapless (dva decky), 10pásmový EQ, bridge
-do Flutteru ověřený integračním testem na Windows, ověřovací UI.
-Zbývá do MVP: crossfade s vyrovnáním hlasitosti (EBU R128), `audio_service` (Android foreground
-service, SMTC), ověření na Android zařízení, obaly alb, sledování složek (notify), návrh UI.
+do Flutteru ověřený integračním testem na Windows, ověřovací UI, ovládání médií (Windows SMTC
+v Rustu ověřené testem, Android `audio_service`).
+Zbývá do MVP: crossfade s vyrovnáním hlasitosti (EBU R128), ověření na Android zařízení (včetně
+přehrávání se zhasnutým displejem), obaly alb (i do SMTC a notifikace), sledování složek (notify),
+návrh UI.

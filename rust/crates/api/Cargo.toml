@@ -23,3 +23,16 @@ dap-engine = { version = "0.1.0", path = "../engine" }
 dap-library = { version = "0.1.0", path = "../library" }
 flutter_rust_bridge = "=2.13.0"
 rusqlite = "0.42.0"
+
+# Windows media controls (SMTC): media keys and the "now playing" flyout.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Foundation",
+    "Media",
+    "Media_Playback",
+    "Win32_System_WinRT",
+] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# The tests look our session up the way Windows itself does.
+windows = { version = "0.62.2", features = ["Foundation_Collections", "Media_Control"] }

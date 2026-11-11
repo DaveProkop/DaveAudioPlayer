@@ -382,6 +382,7 @@ dependencies = [
  "dap-library",
  "flutter_rust_bridge",
  "rusqlite",
+ "windows",
 ]
 
 [[package]]
