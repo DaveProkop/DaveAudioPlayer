@@ -22,6 +22,8 @@ které vybere uživatel. Projekt je ve fázi konceptu, kód zatím neexistuje.
   ebur128, signalsmith-stretch (time-stretch, MIT), rusty-chromaprint, reqwest + tokio, notify, walkdir.
 - Flutter: `audio_service` pro foreground service (Android), notifikaci, lock screen, SMTC (Windows).
 - Databáze: SQLite ve WAL režimu, jedno zapisující vlákno, více čtecích spojení.
+- Android: přístup ke složkám přes `READ_MEDIA_AUDIO` a běžné cesty, ne SAF.
+- Opus se v MVP nepodporuje (symphonia ho nemá); doplní se později přes libopus.
 
 ## Tvrdá pravidla
 - **Audio vlákno (cpal callback) nesmí alokovat, zamykat ani dělat I/O.** Komunikuje jen přes lock-free fronty.

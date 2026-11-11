@@ -37,6 +37,8 @@ generátory křivek. Testování offline: plán vyrenderovat do WAV bez UI.
 ```
 crates/
   audio-io   decoder (symphonia), resampler (rubato), output (cpal), ring buffery
+             formáty MVP: MP3, FLAC, WAV, AAC/M4A, ALAC, Ogg Vorbis; Opus až později (symphonia
+             ho nemá, bude potřeba binding na libopus)
   dsp        biquad EQ, filtry, delay, limiter, vyhlazování parametrů
   mixer      Deck, Mixer, TransitionPlan, automatizace
   analysis   BPM/beatgrid, tónina, EBU R128, energie, intro/outro
@@ -63,7 +65,9 @@ Pravidla:
 ## Platformní specifika
 **Android:** engine ve stejném procesu, foreground service přes `audio_service`, audio focus
 (hovor, navigace), pauza při odpojení sluchátek, AAudio na nativních 48 kHz.
-Složky přes Storage Access Framework.
+Složky přes oprávnění `READ_MEDIA_AUDIO` (Android 13+, starší `READ_EXTERNAL_STORAGE`) – Rust dostává
+běžné cesty, skener (`walkdir`, `notify`) funguje stejně jako na Windows. Storage Access Framework
+se nepoužívá (URI místo cest by vyžadovaly procházení v Kotlinu a předávání file descriptorů).
 
 **Windows:** WASAPI shared (volitelně exclusive), SMTC pro media klávesy.
 

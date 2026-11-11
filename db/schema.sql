@@ -16,7 +16,7 @@ PRAGMA user_version = 1;
 -- Složky, které vybral uživatel
 CREATE TABLE library_root (
     id          INTEGER PRIMARY KEY,
-    path        TEXT    NOT NULL UNIQUE,      -- absolutní cesta / Android URI (SAF)
+    path        TEXT    NOT NULL UNIQUE,      -- absolutní cesta (Windows i Android)
     enabled     INTEGER NOT NULL DEFAULT 1,
     watch       INTEGER NOT NULL DEFAULT 1,   -- sledovat změny (notify)
     added_at    INTEGER NOT NULL              -- unix ms
