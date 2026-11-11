@@ -4,7 +4,7 @@
 //! read-only connections. The schema version lives in `PRAGMA user_version`.
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
@@ -25,6 +25,11 @@ pub enum DbError {
         found: i64,
         supported: i64,
     },
+    /// A library folder is not reachable (unplugged drive, removed SD card).
+    RootUnavailable(PathBuf),
+    Io(std::io::Error),
+    /// A single file could not be read (tags or properties).
+    File(String),
 }
 
 impl fmt::Display for DbError {
@@ -35,6 +40,11 @@ impl fmt::Display for DbError {
                 f,
                 "database schema version {found} is newer than supported version {supported}"
             ),
+            DbError::RootUnavailable(p) => {
+                write!(f, "library folder not available: {}", p.display())
+            }
+            DbError::Io(e) => write!(f, "I/O error: {e}"),
+            DbError::File(e) => write!(f, "{e}"),
         }
     }
 }
@@ -43,7 +53,8 @@ impl std::error::Error for DbError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             DbError::Sqlite(e) => Some(e),
-            DbError::TooNew { .. } => None,
+            DbError::Io(e) => Some(e),
+            _ => None,
         }
     }
 }

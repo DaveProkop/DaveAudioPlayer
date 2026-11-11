@@ -29,7 +29,7 @@ CREATE TABLE file (
     rel_path     TEXT    NOT NULL,
     size         INTEGER NOT NULL,
     mtime        INTEGER NOT NULL,
-    quick_hash   BLOB,                        -- hash prvních+posledních 64 kB → detekce přesunu
+    quick_hash   BLOB,                        -- FNV-1a 64 z velikosti + prvních/posledních 16 kB → detekce přesunu
     format       TEXT    NOT NULL,            -- mp3, flac, m4a, ogg, opus, wav…
     duration_ms  INTEGER,
     sample_rate  INTEGER,
@@ -135,7 +135,7 @@ CREATE TABLE lyrics (
 -- 3. Úpravy metadat
 -- ---------------------------------------------------------------------
 
--- Každá ruční nebo online úprava pole. Záznam se stavem 'db_only'
+-- Každá ruční nebo online úprava pole. Jakýkoli záznam pro (track_id, field)
 -- zároveň funguje jako zámek: rescan souboru pole nepřepíše.
 CREATE TABLE tag_edit (
     id          INTEGER PRIMARY KEY,
