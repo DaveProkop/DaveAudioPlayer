@@ -1,12 +1,25 @@
 [package]
-name = "dap-api"
+# cargokit names the built library after the package, so it must match the
+# underscore library name (dap_api.dll / libdap_api.so).
+name = "dap_api"
 description = "Thin facade exposed to Flutter via flutter_rust_bridge"
 version.workspace = true
-edition.workspace = true
+# The generated bridge code (frb_generated.rs) targets edition 2021.
+edition = "2021"
 license.workspace = true
 repository.workspace = true
 
-[lints]
-workspace = true
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [dependencies]
+anyhow = "1.0.104"
+crossbeam-channel = "0.5.17"
+dap-dsp = { version = "0.1.0", path = "../dsp" }
+dap-engine = { version = "0.1.0", path = "../engine" }
+dap-library = { version = "0.1.0", path = "../library" }
+flutter_rust_bridge = "=2.13.0"
+rusqlite = "0.42.0"

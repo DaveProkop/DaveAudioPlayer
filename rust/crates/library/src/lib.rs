@@ -6,5 +6,5 @@ pub mod scanner;
 pub mod search;
 
 pub use db::{DbError, SCHEMA_VERSION};
-pub use scanner::{ScanProgress, ScanReport, add_root, scan_root};
+pub use scanner::{ScanJob, ScanProgress, ScanReport, add_root, root_path, scan_root};
 pub use search::search_tracks;

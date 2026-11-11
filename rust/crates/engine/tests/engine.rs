@@ -305,3 +305,49 @@ fn queue_edits_and_position_survive_a_restart() {
     ));
     assert_eq!(s.position_ms, 2_000);
 }
+
+#[test]
+fn add_folder_scans_in_batches_while_queue_edits_go_through() {
+    let dir = TempDir::new("scan");
+    for k in 0..120u32 {
+        write_wav(&dir.music().join(format!("{k:03}.wav")), k, 500);
+    }
+    // Create the database first (the engine opens an existing or new file).
+    drop(open_writer(&dir.db()).unwrap());
+    let engine = start(&dir, None);
+    engine.send(Command::AddFolder(dir.music()));
+
+    let mut progress_events = 0;
+    let events = wait_for(&engine, |e| {
+        if matches!(e, Event::ScanProgress { .. }) {
+            progress_events += 1;
+        }
+        matches!(e, Event::ScanFinished(_))
+    });
+    let summary = events
+        .iter()
+        .find_map(|e| {
+            if let Event::ScanFinished(s) = e {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        (summary.added, summary.failed, summary.cancelled),
+        (120, 0, false)
+    );
+    assert!(
+        progress_events >= 3,
+        "120 files in batches of 50 → 3 steps, got {progress_events}"
+    );
+
+    // A second request rescans: everything unchanged.
+    engine.send(Command::RescanLibrary);
+    let events = wait_for(&engine, |e| matches!(e, Event::ScanFinished(_)));
+    let Some(Event::ScanFinished(s)) = events.last() else {
+        unreachable!()
+    };
+    assert_eq!((s.added, s.unchanged), (0, 120));
+}

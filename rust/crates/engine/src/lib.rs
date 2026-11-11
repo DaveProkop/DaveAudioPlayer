@@ -13,6 +13,6 @@ pub mod output;
 pub mod queue;
 
 pub use db_writer::DbWriter;
-pub use engine::{Command, Engine, EngineConfig, Event, PlayerState, Status};
+pub use engine::{Command, Engine, EngineConfig, Event, PlayerState, ScanSummary, Status};
 pub use output::OutputConfig;
 pub use queue::{Queue, QueueEntry};

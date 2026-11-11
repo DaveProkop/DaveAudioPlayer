@@ -1,7 +1,7 @@
 # DaveAudioPlayer
 
 Hudební přehrávač pro **Windows (PC)** a **Android**. Přehrává hudbu z lokálních složek,
-které vybere uživatel. Projekt je ve fázi konceptu, kód zatím neexistuje.
+které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a ověřovací Flutter UI (`app/`).
 
 ## Komunikace
 - S uživatelem mluv česky, stručně a věcně.
@@ -24,6 +24,10 @@ které vybere uživatel. Projekt je ve fázi konceptu, kód zatím neexistuje.
 - Databáze: SQLite ve WAL režimu, jedno zapisující vlákno, více čtecích spojení.
 - Android: přístup ke složkám přes `READ_MEDIA_AUDIO` a běžné cesty, ne SAF.
 - Opus se v MVP nepodporuje (symphonia ho nemá); doplní se později přes libopus.
+- App ID `cz.daveprokop.daveaudioplayer`, minimální Android 8.0 (API 26).
+- Bridge: flutter_rust_bridge 2.13; crate `api` se jmenuje `dap_api` (cargokit odvozuje název knihovny
+  z názvu balíčku). Události do Dartu = jedna struktura `AppEvent` s `kind` (bez freezed).
+- Sken knihovny běží po dávkách (`ScanJob`) jako úlohy jediného DB writer vlákna.
 
 ## Tvrdá pravidla
 - **Audio vlákno (cpal callback) nesmí alokovat, zamykat ani dělat I/O.** Komunikuje jen přes lock-free fronty.
@@ -32,6 +36,14 @@ které vybere uživatel. Projekt je ve fázi konceptu, kód zatím neexistuje.
 - Na hranici FFI zachytávej panicky. Chyba dekódování = přeskočit track, nikdy pád aplikace.
 - Ruční úpravy metadat (tabulka `tag_edit`) nesmí přepsat rescan souboru.
 - Pozici přehrávání neposílat do Dartu každý frame – posílat čas + pozici + rychlost, Dart dopočítává.
+
+## Vývoj (příkazy)
+- Rust: `cd rust && cargo test --workspace && cargo clippy --workspace --all-targets`
+- Flutter: `cd app && flutter run -d windows`, `flutter test`, `flutter test integration_test -d windows`
+- Po změně `rust/crates/api/src/api/*`: `cd app && flutter_rust_bridge_codegen generate`
+- Windows vyžaduje zapnutý Režim vývojáře (Flutter pluginy používají symlinky).
+- Konzolové nástroje: `cargo run -p dap-engine --example player -- <db> <složka>`,
+  `cargo run -p dap-library --example scan -- <db> <složka> [hledání]`
 
 ## Plánovaná struktura repozitáře
 ```
@@ -52,6 +64,8 @@ DaveAudioPlayer/
 3. Smart Mix (analýza + typy přechodů + auto-řazení fronty).
 4. Rozšiřující funkce (chytré playlisty, statistiky, scrobbling, texty, dálkové ovládání z mobilu, sync).
 
-## Další krok
-Návrh obrazovek UI (knihovna, přehrávač s frontou, editor metadat, nastavení Smart Mixu),
-potom založení Cargo workspace a Flutter projektu a MVP.
+## Stav a další krok
+Hotovo: knihovna (sken, tagy, hledání), fronta v DB, gapless (dva decky), 10pásmový EQ, bridge
+do Flutteru ověřený integračním testem na Windows, ověřovací UI.
+Zbývá do MVP: crossfade s vyrovnáním hlasitosti (EBU R128), `audio_service` (Android foreground
+service, SMTC), ověření na Android zařízení, obaly alb, sledování složek (notify), návrh UI.

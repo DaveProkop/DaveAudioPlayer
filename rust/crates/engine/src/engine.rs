@@ -5,6 +5,8 @@
 //! sent only when something changes; the UI extrapolates.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -12,6 +14,7 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use dap_dsp::eq::BAND_COUNT;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
+use dap_library::{ScanJob, ScanReport, add_root};
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -61,6 +64,11 @@ pub enum Command {
         preamp_db: f32,
     },
     SetEqEnabled(bool),
+    /// Registers a music folder and rescans the library.
+    AddFolder(PathBuf),
+    /// Rescans every registered folder.
+    RescanLibrary,
+    CancelScan,
     Shutdown,
 }
 
@@ -94,6 +102,36 @@ pub enum Event {
         error: String,
     },
     Error(String),
+    ScanProgress {
+        folder: PathBuf,
+        processed: usize,
+        total: usize,
+    },
+    /// A library scan finished; library views should refresh.
+    ScanFinished(ScanSummary),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanSummary {
+    pub added: usize,
+    pub updated: usize,
+    pub unchanged: usize,
+    pub moved: usize,
+    pub missing: usize,
+    pub failed: usize,
+    pub cancelled: bool,
+}
+
+impl ScanSummary {
+    fn add(&mut self, r: &ScanReport) {
+        self.added += r.added;
+        self.updated += r.updated;
+        self.unchanged += r.unchanged;
+        self.moved += r.moved;
+        self.missing += r.missing;
+        self.failed += r.failed.len();
+        self.cancelled |= r.cancelled;
+    }
 }
 
 /// Handle to a running engine. Dropping it shuts the engine down.
@@ -188,6 +226,15 @@ struct Control {
     /// Where to start the cursor item when nothing is loaded (restored state).
     resume_ms: u64,
     next_token: u64,
+    scan: ScanState,
+}
+
+#[derive(Default)]
+struct ScanState {
+    running: Arc<AtomicBool>,
+    again: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl Control {
@@ -224,6 +271,7 @@ impl Control {
             position_frames: 0,
             resume_ms,
             next_token: 1,
+            scan: ScanState::default(),
         };
         control.emit(Event::Queue(control.queue.entries()));
         control.emit_state();
@@ -243,6 +291,10 @@ impl Control {
             self.status = Status::Paused;
         }
         self.save_state();
+        self.scan.cancel.store(true, Ordering::Relaxed);
+        if let Some(t) = self.scan.thread.take() {
+            let _ = t.join(); // it holds a writer handle
+        }
         self.output = None; // stop audio before the decks go away
         self.current = None;
         self.next = None;
@@ -527,7 +579,57 @@ impl Control {
                 preamp_db,
             }),
             Command::SetEqEnabled(on) => self.send_mixer(MixerCommand::SetEqEnabled(on)),
+            Command::AddFolder(path) => {
+                let result = self.db.call(move |c| add_root(c, &path));
+                match result {
+                    Some(Ok(_)) => self.start_scan(),
+                    Some(Err(e)) => self.emit(Event::Error(e.to_string())),
+                    None => {}
+                }
+            }
+            Command::RescanLibrary => self.start_scan(),
+            Command::CancelScan => self.scan.cancel.store(true, Ordering::Relaxed),
             Command::Shutdown => {}
+        }
+    }
+
+    /// Scans all folders on a coordinator thread; each batch runs as its own writer job.
+    /// A request during a running scan makes it run once more when done.
+    fn start_scan(&mut self) {
+        if self.scan.running.swap(true, Ordering::AcqRel) {
+            self.scan.again.store(true, Ordering::Release);
+            return;
+        }
+        if let Some(t) = self.scan.thread.take() {
+            let _ = t.join();
+        }
+        self.scan.cancel.store(false, Ordering::Relaxed);
+        let db = self.db.clone();
+        let events = self.events.clone();
+        let (running, again, cancel) = (
+            self.scan.running.clone(),
+            self.scan.again.clone(),
+            self.scan.cancel.clone(),
+        );
+        let spawned = std::thread::Builder::new()
+            .name("library-scan".into())
+            .spawn(move || {
+                loop {
+                    again.store(false, Ordering::Release);
+                    let summary = scan_all(&db, &events, &cancel);
+                    let _ = events.send(Event::ScanFinished(summary));
+                    if cancel.load(Ordering::Relaxed) || !again.load(Ordering::Acquire) {
+                        break;
+                    }
+                }
+                running.store(false, Ordering::Release);
+            });
+        match spawned {
+            Ok(t) => self.scan.thread = Some(t),
+            Err(e) => {
+                self.scan.running.store(false, Ordering::Release);
+                self.emit(Event::Error(format!("cannot start scan: {e}")));
+            }
         }
     }
 
@@ -637,4 +739,59 @@ fn read_setting(conn: &Connection, key: &str) -> Option<i64> {
     .ok()
     .flatten()
     .and_then(|v| v.trim().parse().ok())
+}
+
+fn scan_all(db: &DbWriter, events: &Sender<Event>, cancel: &Arc<AtomicBool>) -> ScanSummary {
+    let mut summary = ScanSummary::default();
+    let roots: Vec<(i64, String)> = db
+        .call(|c| {
+            c.prepare("SELECT id, path FROM library_root WHERE enabled = 1 ORDER BY id")
+                .and_then(|mut st| {
+                    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    for (root_id, path) in roots {
+        if cancel.load(Ordering::Relaxed) {
+            summary.cancelled = true;
+            break;
+        }
+        let folder = PathBuf::from(&path);
+        // Walking the folder is file-system work only; it stays off the writer thread.
+        let mut job = match ScanJob::walk(root_id, folder.clone()) {
+            Ok(j) => j,
+            Err(e) => {
+                let _ = events.send(Event::Error(e.to_string()));
+                continue;
+            }
+        };
+        loop {
+            let c = cancel.clone();
+            let Some((returned, result)) = db.call(move |conn| {
+                let r = job.step(conn, &c, |_| {});
+                (job, r)
+            }) else {
+                return summary; // writer gone: shutting down
+            };
+            job = returned;
+            let (processed, total) = job.progress();
+            let _ = events.send(Event::ScanProgress {
+                folder: folder.clone(),
+                processed,
+                total,
+            });
+            match result {
+                Ok(false) => continue,
+                Ok(true) => break,
+                Err(e) => {
+                    let _ = events.send(Event::Error(e.to_string()));
+                    break;
+                }
+            }
+        }
+        summary.add(job.report());
+    }
+    summary
 }

@@ -1,0 +1,5 @@
+# Generates Dart bindings for the Rust core: run `flutter_rust_bridge_codegen generate`
+# in this folder after changing anything under rust/crates/api/src/api/.
+rust_input: crate::api
+rust_root: ../rust/crates/api/
+dart_output: lib/src/rust

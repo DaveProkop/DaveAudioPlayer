@@ -6,7 +6,7 @@
 //! - files that disappeared are flagged `missing`, never deleted
 //! - an unreachable root (unplugged drive) is an error and marks nothing as missing
 //!
-//! Runs on the single DB writer thread.
+//! Database work runs on the single DB writer thread, in batches (see [`ScanJob`]).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -26,8 +26,9 @@ pub const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "wav", "m4a", "m4b", "mp4", "aac", "ogg", "oga",
 ];
 
-/// Files committed per transaction.
-const BATCH: usize = 200;
+/// Files per step (one transaction). Small enough that other writes wait at most
+/// a moment while a large library is being scanned.
+const BATCH: usize = 50;
 /// Bytes hashed from the start and from the end of a file.
 const HASH_SPAN: u64 = 16 * 1024;
 
@@ -78,53 +79,173 @@ struct Known {
     missing: bool,
 }
 
+/// Scans a whole root in one go (tests, tools). The app uses [`ScanJob`] so other
+/// writes can run between batches.
 pub fn scan_root(
     conn: &mut Connection,
     root_id: i64,
     cancel: &AtomicBool,
     mut progress: impl FnMut(&ScanProgress<'_>),
 ) -> Result<ScanReport> {
-    let root: String = conn.query_row(
+    let root = root_path(conn, root_id)?;
+    let mut job = ScanJob::walk(root_id, root)?;
+    while !job.step(conn, cancel, &mut progress)? {}
+    Ok(job.into_report())
+}
+
+/// Path of a registered library folder.
+pub fn root_path(conn: &Connection, root_id: i64) -> Result<PathBuf> {
+    let p: String = conn.query_row(
         "SELECT path FROM library_root WHERE id = ?1",
         [root_id],
         |r| r.get(0),
     )?;
-    let root = PathBuf::from(root);
-    if !root.is_dir() {
-        return Err(DbError::RootUnavailable(root));
+    Ok(PathBuf::from(p))
+}
+
+/// A scan split into steps. [`ScanJob::walk`] touches only the file system and can run
+/// on any thread; each [`ScanJob::step`] does one batch on the writer connection, so the
+/// writer thread can serve other jobs (queue edits, play stats) in between.
+pub struct ScanJob {
+    root_id: i64,
+    root: PathBuf,
+    found: Vec<Found>,
+    next: usize,
+    known: Option<HashMap<String, Known>>,
+    gone: Vec<i64>,
+    names: NameCache,
+    report: ScanReport,
+}
+
+impl ScanJob {
+    /// Lists the audio files under `root`. Fails if the folder is not reachable.
+    pub fn walk(root_id: i64, root: PathBuf) -> Result<Self> {
+        if !root.is_dir() {
+            return Err(DbError::RootUnavailable(root));
+        }
+        let mut report = ScanReport::default();
+        let found = walk(&root, &mut report);
+        Ok(Self {
+            root_id,
+            root,
+            found,
+            next: 0,
+            known: None,
+            gone: Vec::new(),
+            names: NameCache::default(),
+            report,
+        })
     }
 
-    let mut report = ScanReport::default();
-    let found = walk(&root, &mut report);
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 
-    let mut known: HashMap<String, Known> = {
-        let mut st =
-            conn.prepare("SELECT id, rel_path, size, mtime, missing FROM file WHERE root_id = ?1")?;
-        let rows = st.query_map([root_id], |r| {
-            Ok((
-                r.get::<_, String>(1)?,
-                Known {
-                    id: r.get(0)?,
-                    size: r.get::<_, i64>(2)? as u64,
-                    mtime: r.get(3)?,
-                    missing: r.get(4)?,
-                },
-            ))
-        })?;
-        rows.collect::<std::result::Result<_, _>>()?
-    };
+    /// `(processed, total)` files.
+    pub fn progress(&self) -> (usize, usize) {
+        (self.next, self.found.len())
+    }
 
-    // Files that are gone from disk are flagged first, so that a file moved within this
-    // scan is recognized as a move when its new location is processed. Folders that
-    // could not be read are skipped: their files are not known to be gone.
-    let unreadable: Vec<String> = report
-        .failed
-        .iter()
-        .filter_map(|(p, _)| rel_path(&root, p))
-        .collect();
-    let present: std::collections::HashSet<&str> = found.iter().map(|f| f.rel.as_str()).collect();
-    let mut gone = Vec::new();
-    {
+    pub fn report(&self) -> &ScanReport {
+        &self.report
+    }
+
+    pub fn into_report(self) -> ScanReport {
+        self.report
+    }
+
+    /// Processes the next batch. Returns `true` when the scan is complete (or cancelled).
+    pub fn step(
+        &mut self,
+        conn: &mut Connection,
+        cancel: &AtomicBool,
+        mut progress: impl FnMut(&ScanProgress<'_>),
+    ) -> Result<bool> {
+        if self.known.is_none() {
+            self.prepare(conn)?;
+        }
+        let total = self.found.len();
+        let end = (self.next + BATCH).min(total);
+        let tx = conn.transaction()?;
+        let known = self.known.as_mut().expect("prepared");
+        while self.next < end {
+            if cancel.load(Ordering::Relaxed) {
+                self.report.cancelled = true;
+                break;
+            }
+            let f = &self.found[self.next];
+            progress(&ScanProgress {
+                processed: self.next,
+                total,
+                current: &f.abs,
+            });
+            let k = known.remove(&f.rel);
+            if let Err(e) = process_file(
+                &tx,
+                &mut self.names,
+                self.root_id,
+                f,
+                k.as_ref(),
+                &mut self.report,
+            ) {
+                match e {
+                    DbError::Sqlite(_) | DbError::TooNew { .. } => return Err(e),
+                    other => self.report.failed.push((f.abs.clone(), other.to_string())),
+                }
+            }
+            self.next += 1;
+        }
+        tx.commit()?;
+
+        if self.next < total && !self.report.cancelled {
+            return Ok(false);
+        }
+        // Gone files that did not turn up elsewhere stay missing.
+        for &id in &self.gone {
+            let still_missing: bool =
+                conn.query_row("SELECT missing FROM file WHERE id = ?1", [id], |r| r.get(0))?;
+            self.report.missing += usize::from(still_missing);
+        }
+        if !self.report.cancelled {
+            progress(&ScanProgress {
+                processed: total,
+                total,
+                current: &self.root,
+            });
+        }
+        Ok(true)
+    }
+
+    /// Loads what the database knows about this root and flags files gone from disk
+    /// first, so that a file moved within this scan is recognized as a move when its new
+    /// location is processed. Folders that could not be read are skipped: their files are
+    /// not known to be gone.
+    fn prepare(&mut self, conn: &mut Connection) -> Result<()> {
+        let known: HashMap<String, Known> = {
+            let mut st = conn.prepare(
+                "SELECT id, rel_path, size, mtime, missing FROM file WHERE root_id = ?1",
+            )?;
+            let rows = st.query_map([self.root_id], |r| {
+                Ok((
+                    r.get::<_, String>(1)?,
+                    Known {
+                        id: r.get(0)?,
+                        size: r.get::<_, i64>(2)? as u64,
+                        mtime: r.get(3)?,
+                        missing: r.get(4)?,
+                    },
+                ))
+            })?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        let unreadable: Vec<String> = self
+            .report
+            .failed
+            .iter()
+            .filter_map(|(p, _)| rel_path(&self.root, p))
+            .collect();
+        let present: std::collections::HashSet<&str> =
+            self.found.iter().map(|f| f.rel.as_str()).collect();
         let tx = conn.transaction()?;
         for (rel, k) in &known {
             let in_unreadable = unreadable
@@ -132,54 +253,13 @@ pub fn scan_root(
                 .any(|u| u.is_empty() || rel.starts_with(&format!("{u}/")));
             if !k.missing && !present.contains(rel.as_str()) && !in_unreadable {
                 tx.execute("UPDATE file SET missing = 1 WHERE id = ?1", [k.id])?;
-                gone.push(k.id);
+                self.gone.push(k.id);
             }
         }
         tx.commit()?;
+        self.known = Some(known);
+        Ok(())
     }
-
-    let mut names = NameCache::default();
-    let total = found.len();
-    for (batch_no, batch) in found.chunks(BATCH).enumerate() {
-        let tx = conn.transaction()?;
-        for (i, f) in batch.iter().enumerate() {
-            if cancel.load(Ordering::Relaxed) {
-                report.cancelled = true;
-                break;
-            }
-            progress(&ScanProgress {
-                processed: batch_no * BATCH + i,
-                total,
-                current: &f.abs,
-            });
-            let k = known.remove(&f.rel);
-            if let Err(e) = process_file(&tx, &mut names, root_id, f, k.as_ref(), &mut report) {
-                match e {
-                    DbError::Sqlite(_) | DbError::TooNew { .. } => return Err(e),
-                    other => report.failed.push((f.abs.clone(), other.to_string())),
-                }
-            }
-        }
-        tx.commit()?;
-        if report.cancelled {
-            break;
-        }
-    }
-
-    // Gone files that did not turn up elsewhere stay missing.
-    for id in gone {
-        let still_missing: bool =
-            conn.query_row("SELECT missing FROM file WHERE id = ?1", [id], |r| r.get(0))?;
-        report.missing += usize::from(still_missing);
-    }
-    if !report.cancelled {
-        progress(&ScanProgress {
-            processed: total,
-            total,
-            current: &root,
-        });
-    }
-    Ok(report)
 }
 
 fn rel_path(root: &Path, path: &Path) -> Option<String> {
