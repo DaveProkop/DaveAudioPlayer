@@ -12,12 +12,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dap_audio_io::{
-    AudioSource, Decoder, OutputDevice, PcmConsumer, PcmProducer, StreamResampler, pcm_ring,
-    remap_channels,
-};
+use dap_audio_io::{AudioSource, Decoder, OutputDevice, StreamResampler, remap_channels};
 use dap_dsp::Equalizer;
 use dap_dsp::eq::BAND_COUNT;
+use dap_mixer::ring::{PcmConsumer, PcmProducer, pcm_ring};
 
 const RING_SECONDS: f64 = 1.0;
 const PREFILL_SECONDS: f64 = 0.25;

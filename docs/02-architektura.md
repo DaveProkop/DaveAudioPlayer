@@ -36,11 +36,11 @@ generátory křivek. Testování offline: plán vyrenderovat do WAV bez UI.
 ## Cargo workspace
 ```
 crates/
-  audio-io   decoder (symphonia), resampler (rubato), output (cpal), ring buffery
+  audio-io   decoder (symphonia), resampler (rubato), převod kanálů, output (cpal)
              formáty MVP: MP3, FLAC, WAV, AAC/M4A, ALAC, Ogg Vorbis; Opus až později (symphonia
              ho nemá, bude potřeba binding na libopus)
   dsp        biquad EQ, filtry, delay, limiter, vyhlazování parametrů
-  mixer      Deck, Mixer, TransitionPlan, automatizace
+  mixer      Deck, Mixer, PCM ring buffery (rtrb), TransitionPlan, automatizace
   analysis   BPM/beatgrid, tónina, EBU R128, energie, intro/outro
   library    skener (walkdir + notify), SQLite (rusqlite), FTS, playlisty
   tags       lofty

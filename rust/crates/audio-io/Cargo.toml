@@ -11,9 +11,9 @@ workspace = true
 
 [dependencies]
 cpal = "0.18.2"
-rtrb = "0.4.1"
 rubato = "5.0.1"
 symphonia = { version = "0.6.1", features = ["mp3", "aac", "isomp4", "alac"] }
 
 [dev-dependencies]
 dap-dsp = { path = "../dsp" }
+dap-mixer = { path = "../mixer" }

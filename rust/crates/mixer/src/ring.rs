@@ -1,4 +1,4 @@
-//! Lock-free single-producer/single-consumer PCM ring buffer (decoder thread → audio thread).
+//! Lock-free single-producer/single-consumer PCM ring buffer (deck decoder thread → audio thread).
 //!
 //! Both ends move whole frames only, so channels never get out of step.
 
