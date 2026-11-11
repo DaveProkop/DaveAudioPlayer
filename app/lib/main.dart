@@ -96,6 +96,14 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: () => player.rescanLibrary(),
             ),
+            IconButton(
+              tooltip: 'Přechody a hlasitost',
+              icon: const Icon(Icons.tune),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => PlaybackSettingsDialog(controller: c),
+              ),
+            ),
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(4),
@@ -153,6 +161,60 @@ class _HomeScreenState extends State<HomeScreen> {
     if (path != null && path.trim().isNotEmpty) {
       await player.addFolder(path: path.trim());
     }
+  }
+}
+
+// ----- playback settings --------------------------------------------------------------
+
+class PlaybackSettingsDialog extends StatelessWidget {
+  const PlaybackSettingsDialog({super.key, required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Přechody a hlasitost'),
+      content: SizedBox(
+        width: 360,
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            final s = controller.settings;
+            if (s == null) return const Text('Přehrávač neběží');
+            final seconds = (s.crossfadeMs / 1000).round();
+            return Column(mainAxisSize: MainAxisSize.min, children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Vyrovnat hlasitost'),
+                subtitle: const Text('Všechny skladby hrají stejně hlasitě (EBU R128)'),
+                value: s.normalize,
+                onChanged: (v) => player.setNormalization(enabled: v),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Expanded(child: Text('Crossfade')),
+                Text(seconds == 0 ? 'vypnuto' : '$seconds s'),
+              ]),
+              Slider(
+                value: seconds.toDouble(),
+                max: 12,
+                divisions: 12,
+                label: seconds == 0 ? 'vypnuto' : '$seconds s',
+                onChanged: (v) => player.setCrossfade(ms: v.round() * 1000),
+              ),
+              Text(
+                'Navazující skladby z jednoho alba hrají vždy bez mezery a bez prolnutí.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ]);
+          },
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Zavřít')),
+      ],
+    );
   }
 }
 

@@ -33,6 +33,22 @@ low/mid/high EQ obou decků, cutoff filtru, tempo ratio, echo send. Audio vlákn
 po blocích 64 vzorků. Mixer je „hloupý“, inteligence je v plánovači. Typy přechodů =
 generátory křivek. Testování offline: plán vyrenderovat do WAV bez UI.
 
+**Stav (MVP):** `TransitionPlan` zatím nese jen crossfade (token decku, start a konec v
+snímcích výstupu). Mixer v daném snímku přepne na další deck a starý doznívá jako outgoing
+deck s equal-power křivkami (sin/cos). Plánovač (řídicí vlákno) plán posílá, jakmile deck
+zná přesnou délku skladby (`DeckInfo::end_frame` = délka ze symphonia přepočtená resamplerem).
+Navazující skladby jednoho alba (stejné album, číslo skladby +1, příp. další disk od 1)
+zůstávají gapless a přebírají zesílení předchozí skladby, aby album hrálo, jak bylo zvládnuté.
+Crossfade 0–12 s (výchozí 6 s), jen při automatickém přechodu, ne při ručním přeskočení.
+
+## Vyrovnání hlasitosti
+Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true
+peak do tabulky `analysis` (`algo_version` = 1). Přednost má fronta za aktuální skladbou; na PC
+pak na pozadí zbytek knihovny, na Androidu jen skladby ve frontě (baterie). Zesílení decku =
+−18 LUFS − hlasitost, omezené tak, aby true peak nepřesáhl −1 dBTP (bez limiteru), rozsah
+−24…+12 dB. Neanalyzovaná skladba se bere jako −14 LUFS (−4 dB). Když analýza doběhne pro
+přednačtený deck, který ještě nehraje, zesílení se mu plynule upraví; hrající skladba se nemění.
+
 ## Cargo workspace
 ```
 crates/

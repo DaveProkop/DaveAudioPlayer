@@ -85,7 +85,7 @@ fn scan(dir: &TempDir) -> impl Fn(&str) -> i64 {
     }
 }
 
-fn start(dir: &TempDir, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
+fn start_with(dir: &TempDir, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
     Engine::start(EngineConfig {
         db_path: dir.db(),
         output: OutputConfig::Null {
@@ -96,6 +96,14 @@ fn start(dir: &TempDir, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
         },
     })
     .unwrap()
+}
+
+/// An engine that plays the samples untouched: gapless, no normalization.
+fn start(dir: &TempDir, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
+    let engine = start_with(dir, capture);
+    engine.send(Command::SetCrossfade { ms: 0 });
+    engine.send(Command::SetNormalization(false));
+    engine
 }
 
 /// Collects events until `done` returns true (or panics after a timeout).
@@ -350,4 +358,162 @@ fn add_folder_scans_in_batches_while_queue_edits_go_through() {
         unreachable!()
     };
     assert_eq!((s.added, s.unchanged), (0, 120));
+}
+
+fn captured_from_first_sound(capture: &Mutex<Vec<f32>>) -> Vec<f32> {
+    let out = capture.lock().unwrap();
+    let start = out.iter().position(|&s| s != 0.0).expect("audio was played");
+    out[start..].to_vec()
+}
+
+fn play_to_the_end(engine: &Engine) {
+    let mut started_playing = false;
+    wait_for(engine, |e| match e {
+        Event::State(s) if s.status == Status::Playing => {
+            started_playing = true;
+            false
+        }
+        Event::State(s) => started_playing && s.status == Status::Stopped,
+        _ => false,
+    });
+}
+
+#[test]
+fn crossfades_between_tracks_and_counts_both_plays() {
+    let dir = TempDir::new("crossfade");
+    let len = 2 * RATE; // 2 s each
+    write_wav(&dir.music().join("a.wav"), 1, len);
+    write_wav(&dir.music().join("b.wav"), 2, len);
+    let id = scan(&dir);
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    let fade = (RATE / 2) as usize;
+    let len = len as usize;
+    let out = captured_from_first_sound(&capture);
+    let a = |i: usize| f32::from(sample(1, i as u32)) / 32768.0;
+    let b = |i: usize| f32::from(sample(2, i as u32)) / 32768.0;
+
+    // Track a alone, then the overlap with equal-power curves, then track b alone.
+    let ramp = (RATE / 100) as usize; // 10 ms fade-in on Play
+    assert_eq!(out[ramp + 1000], a(ramp + 1000));
+    let start = len - fade;
+    for k in [0, fade / 4, fade / 2, fade - 1] {
+        let t = k as f64 / fade as f64 * std::f64::consts::FRAC_PI_2;
+        let want = a(start + k) * t.cos() as f32 + b(k) * t.sin() as f32;
+        assert!(
+            (out[start + k] - want).abs() < 1e-5,
+            "overlap frame {k}: {} vs {want}",
+            out[start + k]
+        );
+    }
+    assert_eq!(out[len], b(fade));
+    let total = 2 * len - fade;
+    assert_eq!(out[total - 1], b(len - 1), "b plays to its last frame");
+    assert!(out[total..].iter().all(|&s| s == 0.0));
+
+    let conn = open_writer(&dir.db()).unwrap();
+    let plays: i64 = conn
+        .query_row("SELECT sum(play_count) FROM track", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(plays, 2);
+}
+
+#[test]
+fn consecutive_album_tracks_stay_gapless_with_crossfade_on() {
+    let dir = TempDir::new("album");
+    let len = 2 * RATE;
+    write_wav(&dir.music().join("01.wav"), 1, len);
+    write_wav(&dir.music().join("02.wav"), 2, len);
+    let id = scan(&dir);
+    // WAV files carry no tags here; put both on one album as tracks 1 and 2.
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        conn.execute("INSERT INTO album (title, title_sort) VALUES ('Live', 'live')", [])
+            .unwrap();
+        let album = conn.last_insert_rowid();
+        for (name, no) in [("01.wav", 1), ("02.wav", 2)] {
+            conn.execute(
+                "UPDATE track SET album_id = ?1, track_no = ?2 WHERE id = ?3",
+                rusqlite::params![album, no, id(name)],
+            )
+            .unwrap();
+        }
+    }
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("01.wav"), id("02.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    let out = captured_from_first_sound(&capture);
+    let len = len as usize;
+    assert_eq!(out[len - 1], f32::from(sample(1, len as u32 - 1)) / 32768.0);
+    assert_eq!(out[len], f32::from(sample(2, 0)) / 32768.0, "no overlap");
+    assert!(out[2 * len..].iter().all(|&s| s == 0.0));
+}
+
+#[test]
+fn normalization_applies_the_measured_loudness() {
+    let dir = TempDir::new("loudness");
+    let len = 2 * RATE;
+    write_wav(&dir.music().join("loud.wav"), 1, len);
+    let id = scan(&dir);
+    let track = id("loud.wav");
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start_with(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 0 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![track],
+        at: None,
+    });
+
+    // The analyzer measures queued tracks first; wait for the stored result.
+    let conn = open_writer(&dir.db()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let (lufs, peak) = loop {
+        let row: Option<(Option<f64>, Option<f64>)> = conn
+            .query_row(
+                "SELECT loudness_lufs, true_peak_db FROM analysis WHERE track_id = ?1",
+                [track],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+        if let Some(r) = row {
+            break r;
+        }
+        assert!(Instant::now() < deadline, "analysis did not finish");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let lufs = lufs.expect("measured loudness");
+
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    // The test ramp is mostly infrasound, which K-weighting barely counts: it measures
+    // quiet, and the true peak limits how far it may be turned up.
+    let gain_db = dap_analysis::normalization_gain_db(Some(lufs), peak);
+    assert!(lufs < -18.0 && gain_db.abs() > 0.1, "{lufs} LUFS, {gain_db} dB");
+    let gain = 10f32.powf(gain_db as f32 / 20.0);
+    let out = captured_from_first_sound(&capture);
+    let i = 10_000;
+    let want = f32::from(sample(1, i as u32)) / 32768.0 * gain;
+    assert!((out[i] - want).abs() < 1e-6, "{} vs {want}", out[i]);
 }

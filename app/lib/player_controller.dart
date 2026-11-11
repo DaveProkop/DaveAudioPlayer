@@ -12,6 +12,9 @@ import 'src/rust/api/player.dart' as rust show setVolume;
 /// streamed every frame.
 class PlayerController extends ChangeNotifier {
   PlayerStateDto? state;
+
+  /// Crossfade and normalization as stored by the engine (sent on start and on change).
+  PlayerSettingsDto? settings;
   List<QueueItemDto> queue = const [];
   final Map<int, TrackInfo> _tracks = {};
 
@@ -87,6 +90,8 @@ class PlayerController extends ChangeNotifier {
     switch (e.kind) {
       case AppEventKind.state:
         state = e.state;
+      case AppEventKind.settings:
+        settings = e.settings;
       case AppEventKind.queue:
         queue = e.queue ?? const [];
         await _loadMissingTracks();

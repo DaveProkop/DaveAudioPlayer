@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 925084855;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2109205268;
 
 // Section: executor
 
@@ -675,6 +675,41 @@ fn wire__crate__api__player__seek_impl(
         },
     )
 }
+fn wire__crate__api__player__set_crossfade_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_crossfade",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ms = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::player::set_crossfade(api_ms)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__player__set_eq_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -739,6 +774,41 @@ fn wire__crate__api__player__set_eq_enabled_impl(
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || {
                         let output_ok = crate::api::player::set_eq_enabled(api_enabled)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__player__set_normalization_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_normalization",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::player::set_normalization(api_enabled)?;
                         std::result::Result::Ok(output_ok)
                     })(),
                 )
@@ -987,6 +1057,8 @@ impl SseDecode for crate::api::player::AppEvent {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_kind = <crate::api::player::AppEventKind>::sse_decode(deserializer);
         let mut var_state = <Option<crate::api::player::PlayerStateDto>>::sse_decode(deserializer);
+        let mut var_settings =
+            <Option<crate::api::player::PlayerSettingsDto>>::sse_decode(deserializer);
         let mut var_queue =
             <Option<Vec<crate::api::player::QueueItemDto>>>::sse_decode(deserializer);
         let mut var_trackId = <Option<i64>>::sse_decode(deserializer);
@@ -999,6 +1071,7 @@ impl SseDecode for crate::api::player::AppEvent {
         return crate::api::player::AppEvent {
             kind: var_kind,
             state: var_state,
+            settings: var_settings,
             queue: var_queue,
             track_id: var_trackId,
             message: var_message,
@@ -1016,11 +1089,12 @@ impl SseDecode for crate::api::player::AppEventKind {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::api::player::AppEventKind::State,
-            1 => crate::api::player::AppEventKind::Queue,
-            2 => crate::api::player::AppEventKind::TrackFailed,
-            3 => crate::api::player::AppEventKind::Error,
-            4 => crate::api::player::AppEventKind::ScanProgress,
-            5 => crate::api::player::AppEventKind::ScanFinished,
+            1 => crate::api::player::AppEventKind::Settings,
+            2 => crate::api::player::AppEventKind::Queue,
+            3 => crate::api::player::AppEventKind::TrackFailed,
+            4 => crate::api::player::AppEventKind::Error,
+            5 => crate::api::player::AppEventKind::ScanProgress,
+            6 => crate::api::player::AppEventKind::ScanFinished,
             _ => unreachable!("Invalid variant for AppEventKind: {}", inner),
         };
     }
@@ -1148,6 +1222,19 @@ impl SseDecode for Option<i64> {
     }
 }
 
+impl SseDecode for Option<crate::api::player::PlayerSettingsDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::player::PlayerSettingsDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::player::PlayerStateDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1207,6 +1294,18 @@ impl SseDecode for crate::api::player::PlayStatus {
             1 => crate::api::player::PlayStatus::Playing,
             2 => crate::api::player::PlayStatus::Paused,
             _ => unreachable!("Invalid variant for PlayStatus: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::player::PlayerSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_crossfadeMs = <u32>::sse_decode(deserializer);
+        let mut var_normalize = <bool>::sse_decode(deserializer);
+        return crate::api::player::PlayerSettingsDto {
+            crossfade_ms: var_crossfadeMs,
+            normalize: var_normalize,
         };
     }
 }
@@ -1337,14 +1436,16 @@ fn pde_ffi_dispatcher_primary_impl(
         16 => wire__crate__api__player__rescan_library_impl(port, ptr, rust_vec_len, data_len),
         17 => wire__crate__api__library__search_impl(port, ptr, rust_vec_len, data_len),
         18 => wire__crate__api__player__seek_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__player__set_eq_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__player__set_eq_enabled_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__player__set_crossfade_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__player__set_eq_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__player__set_eq_enabled_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__player__set_normalization_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1369,6 +1470,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::AppEvent {
         [
             self.kind.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
+            self.settings.into_into_dart().into_dart(),
             self.queue.into_into_dart().into_dart(),
             self.track_id.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
@@ -1393,11 +1495,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::AppEventKind {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::State => 0.into_dart(),
-            Self::Queue => 1.into_dart(),
-            Self::TrackFailed => 2.into_dart(),
-            Self::Error => 3.into_dart(),
-            Self::ScanProgress => 4.into_dart(),
-            Self::ScanFinished => 5.into_dart(),
+            Self::Settings => 1.into_dart(),
+            Self::Queue => 2.into_dart(),
+            Self::TrackFailed => 3.into_dart(),
+            Self::Error => 4.into_dart(),
+            Self::ScanProgress => 5.into_dart(),
+            Self::ScanFinished => 6.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -1432,6 +1535,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::player::PlayStatus>
     for crate::api::player::PlayStatus
 {
     fn into_into_dart(self) -> crate::api::player::PlayStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::player::PlayerSettingsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.crossfade_ms.into_into_dart().into_dart(),
+            self.normalize.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::player::PlayerSettingsDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::player::PlayerSettingsDto>
+    for crate::api::player::PlayerSettingsDto
+{
+    fn into_into_dart(self) -> crate::api::player::PlayerSettingsDto {
         self
     }
 }
@@ -1564,6 +1688,7 @@ impl SseEncode for crate::api::player::AppEvent {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::player::AppEventKind>::sse_encode(self.kind, serializer);
         <Option<crate::api::player::PlayerStateDto>>::sse_encode(self.state, serializer);
+        <Option<crate::api::player::PlayerSettingsDto>>::sse_encode(self.settings, serializer);
         <Option<Vec<crate::api::player::QueueItemDto>>>::sse_encode(self.queue, serializer);
         <Option<i64>>::sse_encode(self.track_id, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
@@ -1580,11 +1705,12 @@ impl SseEncode for crate::api::player::AppEventKind {
         <i32>::sse_encode(
             match self {
                 crate::api::player::AppEventKind::State => 0,
-                crate::api::player::AppEventKind::Queue => 1,
-                crate::api::player::AppEventKind::TrackFailed => 2,
-                crate::api::player::AppEventKind::Error => 3,
-                crate::api::player::AppEventKind::ScanProgress => 4,
-                crate::api::player::AppEventKind::ScanFinished => 5,
+                crate::api::player::AppEventKind::Settings => 1,
+                crate::api::player::AppEventKind::Queue => 2,
+                crate::api::player::AppEventKind::TrackFailed => 3,
+                crate::api::player::AppEventKind::Error => 4,
+                crate::api::player::AppEventKind::ScanProgress => 5,
+                crate::api::player::AppEventKind::ScanFinished => 6,
                 _ => {
                     unimplemented!("");
                 }
@@ -1702,6 +1828,16 @@ impl SseEncode for Option<i64> {
     }
 }
 
+impl SseEncode for Option<crate::api::player::PlayerSettingsDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::player::PlayerSettingsDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::player::PlayerStateDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1756,6 +1892,14 @@ impl SseEncode for crate::api::player::PlayStatus {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::player::PlayerSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.crossfade_ms, serializer);
+        <bool>::sse_encode(self.normalize, serializer);
     }
 }
 

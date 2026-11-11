@@ -68,7 +68,7 @@ DaveAudioPlayer/
 ## Stav a další krok
 Hotovo: knihovna (sken, tagy, hledání), fronta v DB, gapless (dva decky), 10pásmový EQ, bridge
 do Flutteru ověřený integračním testem na Windows, ověřovací UI, ovládání médií (Windows SMTC
-v Rustu ověřené testem, Android `audio_service`).
-Zbývá do MVP: crossfade s vyrovnáním hlasitosti (EBU R128), ověření na Android zařízení (včetně
-přehrávání se zhasnutým displejem), obaly alb (i do SMTC a notifikace), sledování složek (notify),
-návrh UI.
+v Rustu ověřené testem, Android `audio_service`), crossfade s vyrovnáním hlasitosti
+(EBU R128, −18 LUFS, analýza na pozadí; navazující skladby alba gapless).
+Zbývá do MVP: ověření na Android zařízení (včetně přehrávání se zhasnutým displejem), obaly alb
+(i do SMTC a notifikace), sledování složek (notify), návrh UI.

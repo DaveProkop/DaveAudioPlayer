@@ -140,6 +140,17 @@ pub fn set_eq_enabled(enabled: bool) -> Result<()> {
     send(Command::SetEqEnabled(enabled))
 }
 
+/// Crossfade between tracks in milliseconds (0 = gapless, at most 12 s). Consecutive
+/// tracks of one album always play gapless.
+pub fn set_crossfade(ms: u32) -> Result<()> {
+    send(Command::SetCrossfade { ms })
+}
+
+/// Volume normalization to a common loudness (EBU R128, -18 LUFS).
+pub fn set_normalization(enabled: bool) -> Result<()> {
+    send(Command::SetNormalization(enabled))
+}
+
 // ----- queue -----------------------------------------------------------------------
 
 pub fn play_index(index: u32) -> Result<()> {
@@ -258,8 +269,15 @@ pub struct ScanSummaryDto {
     pub cancelled: bool,
 }
 
+/// Playback preferences as stored by the engine.
+pub struct PlayerSettingsDto {
+    pub crossfade_ms: u32,
+    pub normalize: bool,
+}
+
 pub enum AppEventKind {
     State,
+    Settings,
     Queue,
     TrackFailed,
     Error,
@@ -271,6 +289,7 @@ pub enum AppEventKind {
 pub struct AppEvent {
     pub kind: AppEventKind,
     pub state: Option<PlayerStateDto>,
+    pub settings: Option<PlayerSettingsDto>,
     pub queue: Option<Vec<QueueItemDto>>,
     pub track_id: Option<i64>,
     pub message: Option<String>,
@@ -285,6 +304,7 @@ impl AppEvent {
         Self {
             kind,
             state: None,
+            settings: None,
             queue: None,
             track_id: None,
             message: None,
@@ -325,6 +345,13 @@ fn to_dto(event: Event) -> AppEvent {
         Event::State(s) => AppEvent {
             state: Some(state_dto(s)),
             ..AppEvent::new(AppEventKind::State)
+        },
+        Event::Settings(s) => AppEvent {
+            settings: Some(PlayerSettingsDto {
+                crossfade_ms: s.crossfade_ms,
+                normalize: s.normalize,
+            }),
+            ..AppEvent::new(AppEventKind::Settings)
         },
         Event::Queue(q) => AppEvent {
             queue: Some(

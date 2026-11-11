@@ -44,6 +44,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  PlayerSettingsDto dco_decode_box_autoadd_player_settings_dto(dynamic raw);
+
+  @protected
   PlayerStateDto dco_decode_box_autoadd_player_state_dto(dynamic raw);
 
   @protected
@@ -89,6 +92,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  PlayerSettingsDto? dco_decode_opt_box_autoadd_player_settings_dto(
+    dynamic raw,
+  );
+
+  @protected
   PlayerStateDto? dco_decode_opt_box_autoadd_player_state_dto(dynamic raw);
 
   @protected
@@ -102,6 +110,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayStatus dco_decode_play_status(dynamic raw);
+
+  @protected
+  PlayerSettingsDto dco_decode_player_settings_dto(dynamic raw);
 
   @protected
   PlayerStateDto dco_decode_player_state_dto(dynamic raw);
@@ -146,6 +157,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  PlayerSettingsDto sse_decode_box_autoadd_player_settings_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PlayerStateDto sse_decode_box_autoadd_player_state_dto(
@@ -199,6 +215,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  PlayerSettingsDto? sse_decode_opt_box_autoadd_player_settings_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PlayerStateDto? sse_decode_opt_box_autoadd_player_state_dto(
     SseDeserializer deserializer,
   );
@@ -218,6 +239,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayStatus sse_decode_play_status(SseDeserializer deserializer);
+
+  @protected
+  PlayerSettingsDto sse_decode_player_settings_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PlayerStateDto sse_decode_player_state_dto(SseDeserializer deserializer);
@@ -267,6 +293,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_i_64(
     PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_player_settings_dto(
+    PlayerSettingsDto self,
     SseSerializer serializer,
   );
 
@@ -343,6 +375,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_player_settings_dto(
+    PlayerSettingsDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_player_state_dto(
     PlayerStateDto? self,
     SseSerializer serializer,
@@ -365,6 +403,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_play_status(PlayStatus self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_player_settings_dto(
+    PlayerSettingsDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_player_state_dto(

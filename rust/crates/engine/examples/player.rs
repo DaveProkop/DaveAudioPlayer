@@ -132,8 +132,16 @@ fn main() {
                             println!("{i:4}  {}", track_label(&labels, *e));
                         }
                     }
+                    (Some("x"), Some(v)) => {
+                        if let Ok(sec) = v.parse::<f64>() {
+                            engine.send(Command::SetCrossfade { ms: (sec * 1000.0) as u32 });
+                        }
+                    }
+                    (Some("r"), Some(v)) => engine.send(Command::SetNormalization(v == "1")),
                     (Some("q"), _) => break,
-                    _ => println!("Enter = play/pause, n, p, s <sec>, v <0-100>, l, q"),
+                    _ => println!(
+                        "Enter = play/pause, n, p, s <sec>, v <0-100>, x <crossfade sec>, r <0|1 normalize>, l, q"
+                    ),
                 }
             }
             recv(engine.events()) -> event => {
@@ -150,6 +158,11 @@ fn main() {
                         );
                     }
                     Ok(Event::Queue(q)) => queue = q.iter().map(|e| e.track_id).collect(),
+                    Ok(Event::Settings(s)) => println!(
+                        "crossfade {} s, normalization {}",
+                        f64::from(s.crossfade_ms) / 1000.0,
+                        if s.normalize { "on" } else { "off" }
+                    ),
                     Ok(Event::TrackFailed { track_id, error }) => {
                         println!("skipped {}: {error}", track_label(&labels, track_id));
                     }

@@ -69,6 +69,15 @@ void main() {
         fail('timed out; got ${events.map((e) => '${e.kind} ${e.state?.status} ${e.message ?? ''}').toList()}');
       }
 
+      step('settings');
+      final defaults = await waitFor((e) => e.kind == AppEventKind.settings);
+      expect(defaults.settings!.crossfadeMs, 6000);
+      expect(defaults.settings!.normalize, isTrue);
+      final settingsMark = events.length;
+      await setCrossfade(ms: 3000);
+      final changed = await waitFor((e) => e.kind == AppEventKind.settings, from: settingsMark);
+      expect(changed.settings!.crossfadeMs, 3000);
+
       step('scan');
       await addFolder(path: music.path);
       final finished = await waitFor((e) => e.kind == AppEventKind.scanFinished);

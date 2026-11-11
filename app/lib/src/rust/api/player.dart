@@ -46,6 +46,15 @@ Future<void> setEq({required List<double> gainsDb, required double preampDb}) =>
 Future<void> setEqEnabled({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetEqEnabled(enabled: enabled);
 
+/// Crossfade between tracks in milliseconds (0 = gapless, at most 12 s). Consecutive
+/// tracks of one album always play gapless.
+Future<void> setCrossfade({required int ms}) =>
+    RustLib.instance.api.crateApiPlayerSetCrossfade(ms: ms);
+
+/// Volume normalization to a common loudness (EBU R128, -18 LUFS).
+Future<void> setNormalization({required bool enabled}) =>
+    RustLib.instance.api.crateApiPlayerSetNormalization(enabled: enabled);
+
 Future<void> playIndex({required int index}) =>
     RustLib.instance.api.crateApiPlayerPlayIndex(index: index);
 
@@ -77,6 +86,7 @@ Stream<AppEvent> appEvents() => RustLib.instance.api.crateApiPlayerAppEvents();
 class AppEvent {
   final AppEventKind kind;
   final PlayerStateDto? state;
+  final PlayerSettingsDto? settings;
   final List<QueueItemDto>? queue;
   final PlatformInt64? trackId;
   final String? message;
@@ -88,6 +98,7 @@ class AppEvent {
   const AppEvent({
     required this.kind,
     this.state,
+    this.settings,
     this.queue,
     this.trackId,
     this.message,
@@ -101,6 +112,7 @@ class AppEvent {
   int get hashCode =>
       kind.hashCode ^
       state.hashCode ^
+      settings.hashCode ^
       queue.hashCode ^
       trackId.hashCode ^
       message.hashCode ^
@@ -116,6 +128,7 @@ class AppEvent {
           runtimeType == other.runtimeType &&
           kind == other.kind &&
           state == other.state &&
+          settings == other.settings &&
           queue == other.queue &&
           trackId == other.trackId &&
           message == other.message &&
@@ -127,6 +140,7 @@ class AppEvent {
 
 enum AppEventKind {
   state,
+  settings,
   queue,
   trackFailed,
   error,
@@ -135,6 +149,25 @@ enum AppEventKind {
 }
 
 enum PlayStatus { stopped, playing, paused }
+
+/// Playback preferences as stored by the engine.
+class PlayerSettingsDto {
+  final int crossfadeMs;
+  final bool normalize;
+
+  const PlayerSettingsDto({required this.crossfadeMs, required this.normalize});
+
+  @override
+  int get hashCode => crossfadeMs.hashCode ^ normalize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayerSettingsDto &&
+          runtimeType == other.runtimeType &&
+          crossfadeMs == other.crossfadeMs &&
+          normalize == other.normalize;
+}
 
 /// Player state at a point in time. The UI computes the live position as
 /// `position_ms + (now - at_epoch_ms) * rate`; no per-frame updates cross the bridge.

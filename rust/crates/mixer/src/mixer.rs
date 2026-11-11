@@ -3,6 +3,10 @@
 //! Gapless: when the current deck is drained (its decoder finished and its ring is
 //! empty), the mixer switches to the preloaded next deck within the same callback, so
 //! not a single frame of silence is inserted between tracks.
+//!
+//! Crossfade: the control thread sends a [`TransitionPlan`] for the current deck. When the
+//! deck reaches the plan's start frame, the next deck becomes current and the old one keeps
+//! playing as the outgoing deck until the plan's end, with equal-power gain curves.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +23,10 @@ const FADE_MS: f64 = 10.0;
 /// How often the playback position is reported.
 const POSITION_REPORT_MS: f64 = 100.0;
 const TRASH_SLOTS: usize = 4;
+/// Per-deck gain changes (loudness normalization on/off) ramp over this time.
+const DECK_GAIN_RAMP_MS: f64 = 50.0;
+/// Outgoing deck audio is mixed in through a scratch buffer of this many frames.
+const SCRATCH_FRAMES: usize = 1024;
 
 /// Audio for one track, filled by a deck decoder thread.
 pub struct DeckInput {
@@ -29,6 +37,33 @@ pub struct DeckInput {
     pub finished: Arc<AtomicBool>,
     /// Position of the first frame in the ring, in output frames (non-zero after a seek).
     pub start_frame: u64,
+    /// Linear gain for this track (loudness normalization); 1.0 = unchanged.
+    pub gain: f32,
+}
+
+/// Crossfade from the current deck `token` into the next deck: the next deck starts when
+/// the current one reaches `start_frame`, and the current one fades out until `end_frame`
+/// (its last frame). Positions are in output frames of the current deck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransitionPlan {
+    pub token: u64,
+    pub start_frame: u64,
+    pub end_frame: u64,
+}
+
+/// A deck in use, with its smoothed gain.
+struct Slot {
+    deck: DeckInput,
+    gain: LinearSmoother,
+}
+
+/// A transition in progress: the outgoing deck and how far the fade has got.
+struct Fade {
+    outgoing: Slot,
+    pos: u64,
+    len: u64,
+    /// Frame in the current output buffer where the fade starts (only in its first buffer).
+    offset: usize,
 }
 
 impl DeckInput {
@@ -54,12 +89,18 @@ pub enum MixerCommand {
         preamp_db: f32,
     },
     SetEqEnabled(bool),
+    /// Plans a crossfade out of the current deck (replaces any earlier plan).
+    SetTransition(TransitionPlan),
+    /// Back to gapless: the next deck starts when the current one ends.
+    ClearTransition,
+    /// Changes the gain of a loaded deck (current, next or outgoing), with a short ramp.
+    SetDeckGain { token: u64, gain: f32 },
 }
 
 pub enum MixerEvent {
-    /// A deck became current (by command or by a gapless switch).
+    /// A deck became current (by command, a gapless switch or the start of a crossfade).
     Started { token: u64 },
-    /// The current deck played to its end.
+    /// A deck played to its end (the current deck, or the outgoing deck of a crossfade).
     Ended { token: u64 },
     /// Current playback position in output frames.
     Position { token: u64, frames: u64 },
@@ -90,8 +131,12 @@ impl MixerControl {
 
 pub struct Mixer {
     channels: usize,
-    current: Option<DeckInput>,
-    next: Option<DeckInput>,
+    current: Option<Slot>,
+    next: Option<Slot>,
+    fade: Option<Fade>,
+    plan: Option<TransitionPlan>,
+    scratch: Vec<f32>,
+    deck_gain_ramp: u32,
     /// Position of the current deck in output frames.
     frames: u64,
     cmd_rx: rtrb::Consumer<MixerCommand>,
@@ -116,6 +161,10 @@ pub fn mixer(sample_rate: u32, channels: usize) -> (Mixer, MixerControl) {
         channels,
         current: None,
         next: None,
+        fade: None,
+        plan: None,
+        scratch: vec![0.0; SCRATCH_FRAMES * channels],
+        deck_gain_ramp: (DECK_GAIN_RAMP_MS * rate / 1000.0) as u32,
         frames: 0,
         cmd_rx,
         evt_tx,
@@ -145,6 +194,9 @@ impl Mixer {
         let silent = !self.playing && self.gain.is_settled() && self.gain.current() == 0.0;
         let filled = if silent { 0 } else { self.pull(out) };
         out[filled..].fill(0.0);
+        if !silent {
+            self.mix_fade(out);
+        }
 
         self.eq.process(out);
         if !(self.gain.is_settled() && self.gain.current() == 1.0) {
@@ -159,19 +211,21 @@ impl Mixer {
         let frames = (filled / self.channels) as u64;
         self.since_report += frames;
         if self.since_report >= self.report_every
-            && let Some(d) = &self.current
+            && let Some(slot) = &self.current
         {
             self.since_report = 0;
             let event = MixerEvent::Position {
-                token: d.token,
+                token: slot.deck.token,
                 frames: self.frames,
             };
             self.emit(event);
         }
     }
 
-    /// Pulls audio from the decks, switching to the next deck when the current one ends.
+    /// Pulls audio from the decks, switching to the next deck when the current one ends
+    /// or a planned transition starts.
     fn pull(&mut self, out: &mut [f32]) -> usize {
+        let ch = self.channels;
         let mut filled = 0;
         while filled < out.len() {
             // A next deck that arrived after the current one ended (e.g. the current track
@@ -181,33 +235,45 @@ impl Mixer {
             {
                 self.make_current(next);
             }
-            let Some(deck) = self.current.as_mut() else {
+            if self.current.is_none() {
                 if !self.idle_reported {
                     self.idle_reported = true;
                     self.emit(MixerEvent::Idle);
                 }
                 break;
-            };
-            let n = deck.rx.pop_into(&mut out[filled..]);
+            }
+            let mut want = out.len() - filled;
+            if let Some(until) = self.frames_until_transition() {
+                if until == 0 {
+                    self.begin_transition(filled / ch);
+                    continue;
+                }
+                want = want.min(until as usize * ch);
+            }
+            let slot = self.current.as_mut().expect("current deck");
+            let n = slot.deck.rx.pop_into(&mut out[filled..filled + want]);
+            apply_gain(&mut slot.gain, &mut out[filled..filled + n], ch);
             filled += n;
-            self.frames += (n / self.channels) as u64;
+            self.frames += (n / ch) as u64;
             if n > 0 {
                 self.in_underrun = false;
             }
-            if filled == out.len() {
-                break;
+            if n == want {
+                continue;
             }
-            if deck.is_drained() {
+            if slot.deck.is_drained() {
                 let ended = self.current.take().expect("current deck");
-                self.emit(MixerEvent::Ended { token: ended.token });
-                self.discard(ended);
+                self.emit(MixerEvent::Ended {
+                    token: ended.deck.token,
+                });
+                self.discard(ended.deck);
                 if let Some(next) = self.next.take() {
                     self.make_current(next);
                 }
             } else {
                 if !self.in_underrun {
                     self.in_underrun = true;
-                    let token = deck.token;
+                    let token = slot.deck.token;
                     self.emit(MixerEvent::Underrun { token });
                 }
                 break;
@@ -216,38 +282,142 @@ impl Mixer {
         filled
     }
 
-    fn make_current(&mut self, deck: DeckInput) {
-        self.frames = deck.start_frame;
+    /// Frames until the planned transition of the current deck starts (0 = now), or
+    /// `None` when there is nothing to fade into.
+    fn frames_until_transition(&self) -> Option<u64> {
+        let plan = self.plan?;
+        let current = self.current.as_ref()?;
+        if current.deck.token != plan.token || self.next.is_none() || self.frames >= plan.end_frame
+        {
+            return None;
+        }
+        Some(plan.start_frame.saturating_sub(self.frames))
+    }
+
+    /// The next deck becomes current; the current one fades out until the plan's end.
+    /// `offset` is where in the output buffer this happens.
+    fn begin_transition(&mut self, offset: usize) {
+        let plan = self.plan.take().expect("plan");
+        let outgoing = self.current.take().expect("current deck");
+        if let Some(old) = self.fade.take() {
+            self.discard(old.outgoing.deck);
+        }
+        self.fade = Some(Fade {
+            outgoing,
+            pos: 0,
+            len: plan.end_frame - self.frames,
+            offset,
+        });
+        let next = self.next.take().expect("next deck");
+        self.make_current(next);
+    }
+
+    /// Applies the fade curves: the incoming deck (already in `out`) fades in, the
+    /// outgoing deck fades out and is added.
+    fn mix_fade(&mut self, out: &mut [f32]) {
+        let ch = self.channels;
+        let Some(fade) = self.fade.as_mut() else {
+            return;
+        };
+        let frames = out.len() / ch;
+        let mut i = std::mem::take(&mut fade.offset);
+        let half_pi = std::f64::consts::FRAC_PI_2;
+        while i < frames && fade.pos < fade.len {
+            let chunk = (frames - i)
+                .min(SCRATCH_FRAMES)
+                .min((fade.len - fade.pos) as usize);
+            let scratch = &mut self.scratch[..chunk * ch];
+            let got = fade.outgoing.deck.rx.pop_into(scratch);
+            scratch[got..].fill(0.0);
+            apply_gain(&mut fade.outgoing.gain, &mut scratch[..got], ch);
+            let dst = &mut out[i * ch..(i + chunk) * ch];
+            for (j, (o, s)) in dst
+                .chunks_exact_mut(ch)
+                .zip(scratch.chunks_exact(ch))
+                .enumerate()
+            {
+                let t = (fade.pos + j as u64) as f64 / fade.len as f64 * half_pi;
+                let (fade_in, fade_out) = (t.sin() as f32, t.cos() as f32);
+                for (o, s) in o.iter_mut().zip(s) {
+                    *o = *o * fade_in + *s * fade_out;
+                }
+            }
+            fade.pos += chunk as u64;
+            i += chunk;
+        }
+        if fade.pos >= fade.len {
+            let done = self.fade.take().expect("fade");
+            self.emit(MixerEvent::Ended {
+                token: done.outgoing.deck.token,
+            });
+            self.discard(done.outgoing.deck);
+        }
+    }
+
+    fn make_current(&mut self, slot: Slot) {
+        self.frames = slot.deck.start_frame;
         self.since_report = self.report_every; // report the new position right away
         self.in_underrun = false;
         self.idle_reported = false;
-        self.emit(MixerEvent::Started { token: deck.token });
-        self.current = Some(deck);
+        self.emit(MixerEvent::Started {
+            token: slot.deck.token,
+        });
+        self.current = Some(slot);
+    }
+
+    fn slot(&self, deck: DeckInput) -> Slot {
+        Slot {
+            gain: LinearSmoother::new(sanitize_gain(deck.gain), self.deck_gain_ramp),
+            deck,
+        }
+    }
+
+    /// Drops the current deck and any fade (skip, seek, stop).
+    fn clear_current(&mut self) {
+        if let Some(old) = self.current.take() {
+            self.discard(old.deck);
+        }
+        if let Some(fade) = self.fade.take() {
+            self.discard(fade.outgoing.deck);
+        }
+        self.plan = None;
     }
 
     fn apply_commands(&mut self) {
         while let Ok(cmd) = self.cmd_rx.pop() {
             match cmd {
                 MixerCommand::SetCurrent(deck) => {
-                    if let Some(old) = self.current.take() {
-                        self.discard(old);
-                    }
-                    self.make_current(deck);
+                    self.clear_current();
+                    let slot = self.slot(deck);
+                    self.make_current(slot);
                 }
                 MixerCommand::ClearCurrent => {
-                    if let Some(old) = self.current.take() {
-                        self.discard(old);
-                    }
+                    self.clear_current();
                     self.idle_reported = true;
                 }
                 MixerCommand::SetNext(deck) => {
-                    if let Some(old) = self.next.replace(deck) {
-                        self.discard(old);
+                    let slot = self.slot(deck);
+                    if let Some(old) = self.next.replace(slot) {
+                        self.discard(old.deck);
                     }
                 }
                 MixerCommand::ClearNext => {
                     if let Some(old) = self.next.take() {
-                        self.discard(old);
+                        self.discard(old.deck);
+                    }
+                }
+                MixerCommand::SetTransition(plan) => self.plan = Some(plan),
+                MixerCommand::ClearTransition => self.plan = None,
+                MixerCommand::SetDeckGain { token, gain } => {
+                    let gain = sanitize_gain(gain);
+                    let fading = self.fade.as_mut().map(|f| &mut f.outgoing);
+                    for slot in [self.current.as_mut(), self.next.as_mut(), fading]
+                        .into_iter()
+                        .flatten()
+                    {
+                        if slot.deck.token == token {
+                            slot.gain.set_target(gain);
+                        }
                     }
                 }
                 MixerCommand::Play => {
@@ -314,6 +484,34 @@ impl Mixer {
     }
 }
 
+fn sanitize_gain(gain: f32) -> f32 {
+    if gain.is_finite() {
+        gain.clamp(0.0, 8.0)
+    } else {
+        1.0
+    }
+}
+
+/// Multiplies interleaved frames by a smoothed gain (skipped at a steady 1.0).
+#[inline]
+fn apply_gain(gain: &mut LinearSmoother, buf: &mut [f32], channels: usize) {
+    if gain.is_settled() {
+        let g = gain.current();
+        if g != 1.0 {
+            for s in buf {
+                *s *= g;
+            }
+        }
+        return;
+    }
+    for frame in buf.chunks_exact_mut(channels) {
+        let g = gain.next_value();
+        for s in frame {
+            *s *= g;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,6 +529,7 @@ mod tests {
             rx,
             finished: Arc::new(AtomicBool::new(true)),
             start_frame: 0,
+            gain: 1.0,
         }
     }
 
@@ -343,6 +542,7 @@ mod tests {
                 rx,
                 finished: finished.clone(),
                 start_frame: 0,
+                gain: 1.0,
             },
             tx,
             finished,
@@ -451,7 +651,7 @@ mod tests {
         m.render(&mut out); // 10 ms fade = 480 frames
         assert!(out[0].abs() > 0.0 && out[out.len() - 1].abs() < out[0].abs() * 0.01 + 1.0);
 
-        let available = |m: &Mixer| m.current.as_ref().unwrap().rx.available_frames();
+        let available = |m: &Mixer| m.current.as_ref().unwrap().deck.rx.available_frames();
         let before = available(&m);
         m.render(&mut out);
         assert!(out.iter().all(|&s| s == 0.0));
@@ -497,6 +697,141 @@ mod tests {
             }
         }
         assert_eq!(pos, Some(96_100));
+    }
+
+    /// A fully decoded deck holding a constant value.
+    fn const_deck(token: u64, value: f32, frames: usize) -> DeckInput {
+        let (mut tx, rx) = pcm_ring(frames.max(1), 2);
+        assert_eq!(tx.push(&vec![value; frames * 2]), frames * 2);
+        DeckInput {
+            token,
+            rx,
+            finished: Arc::new(AtomicBool::new(true)),
+            start_frame: 0,
+            gain: 1.0,
+        }
+    }
+
+    #[test]
+    fn crossfade_overlaps_decks_with_equal_power_curves() {
+        let (mut m, mut ctl) = playing_mixer();
+        ctl.send(MixerCommand::SetCurrent(const_deck(1, 1.0, 1000)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetNext(const_deck(2, 0.5, 2000)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetTransition(TransitionPlan {
+            token: 1,
+            start_frame: 600,
+            end_frame: 1000,
+        }))
+        .ok()
+        .unwrap();
+
+        // Odd buffer size: the transition starts and ends in the middle of buffers.
+        let mut out = Vec::new();
+        let mut buf = vec![0.0; 2 * 250];
+        for _ in 0..6 {
+            m.render(&mut buf);
+            out.extend_from_slice(&buf);
+        }
+        let frame = |i: usize| out[i * 2];
+        assert_eq!(frame(599), 1.0, "only the current deck before the start");
+        for k in [0usize, 100, 200, 399] {
+            let t = k as f64 / 400.0 * std::f64::consts::FRAC_PI_2;
+            let want = (0.5 * t.sin() + t.cos()) as f32;
+            assert!((frame(600 + k) - want).abs() < 1e-5, "frame {k}");
+        }
+        assert_eq!(frame(1000), 0.5, "only the next deck after the end");
+        assert_eq!(frame(1499), 0.5);
+        assert_eq!(events(&mut ctl), ["start 1", "start 2", "end 1", "trash 1"]);
+        assert_eq!(m.frames, 900, "position counts from the start of the next track");
+    }
+
+    #[test]
+    fn transition_is_ignored_without_a_next_deck_or_for_another_deck() {
+        let (mut m, mut ctl) = playing_mixer();
+        ctl.send(MixerCommand::SetCurrent(const_deck(1, 1.0, 100)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetTransition(TransitionPlan {
+            token: 1,
+            start_frame: 50,
+            end_frame: 100,
+        }))
+        .ok()
+        .unwrap();
+        let mut out = vec![0.0; 2 * 100];
+        m.render(&mut out);
+        assert!(out.iter().all(|&s| s == 1.0), "no fade into nothing");
+
+        ctl.send(MixerCommand::SetCurrent(const_deck(2, 1.0, 100)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetNext(const_deck(3, 0.0, 100)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetTransition(TransitionPlan {
+            token: 1,
+            start_frame: 50,
+            end_frame: 100,
+        }))
+        .ok()
+        .unwrap();
+        m.render(&mut out);
+        assert!(out.iter().all(|&s| s == 1.0), "plan for another deck: gapless");
+    }
+
+    #[test]
+    fn seeking_during_a_crossfade_drops_the_outgoing_deck() {
+        let (mut m, mut ctl) = playing_mixer();
+        ctl.send(MixerCommand::SetCurrent(const_deck(1, 1.0, 1000)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetNext(const_deck(2, 0.5, 1000)))
+            .ok()
+            .unwrap();
+        ctl.send(MixerCommand::SetTransition(TransitionPlan {
+            token: 1,
+            start_frame: 0,
+            end_frame: 1000,
+        }))
+        .ok()
+        .unwrap();
+        let mut out = vec![0.0; 2 * 100];
+        m.render(&mut out);
+        ctl.send(MixerCommand::SetCurrent(const_deck(3, 0.25, 1000)))
+            .ok()
+            .unwrap();
+        m.render(&mut out);
+        assert!(out.iter().all(|&s| s == 0.25));
+        assert_eq!(
+            events(&mut ctl),
+            ["start 1", "start 2", "trash 2", "trash 1", "start 3"]
+        );
+    }
+
+    #[test]
+    fn deck_gain_applies_and_ramps_on_change() {
+        let (mut m, mut ctl) = playing_mixer();
+        let mut d = const_deck(1, 1.0, 48_000);
+        d.gain = 0.5;
+        ctl.send(MixerCommand::SetCurrent(d)).ok().unwrap();
+        let mut out = vec![0.0; 2 * 100];
+        m.render(&mut out);
+        assert!(out.iter().all(|&s| s == 0.5));
+
+        ctl.send(MixerCommand::SetDeckGain {
+            token: 1,
+            gain: 1.0,
+        })
+        .ok()
+        .unwrap();
+        let mut ramp = vec![0.0; 2 * 2400]; // 50 ms
+        m.render(&mut ramp);
+        assert!(ramp[0] > 0.5 && ramp[0] < 0.51, "ramps, no jump: {}", ramp[0]);
+        assert_eq!(ramp[ramp.len() - 1], 1.0);
     }
 
     #[test]

@@ -3,6 +3,10 @@
 //!
 //! Position is not streamed: [`PlayerState`] carries position + timestamp + rate and is
 //! sent only when something changes; the UI extrapolates.
+//!
+//! Transitions: with crossfade on, the control thread plans a [`TransitionPlan`] for the
+//! current deck as soon as its exact length is known; consecutive tracks of one album stay
+//! gapless. Loudness normalization sets each deck's gain from the stored EBU R128 analysis.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,15 +15,18 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
+use dap_analysis::normalization_gain_db;
+use dap_dsp::gain::db_to_gain;
 use dap_dsp::eq::BAND_COUNT;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
 use dap_library::{ScanJob, ScanReport, add_root};
-use dap_mixer::{MixerCommand, MixerControl, MixerEvent};
+use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan};
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::analyzer::{Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
-use crate::deck::{DeckFailure, spawn_deck};
+use crate::deck::{DeckInfo, spawn_deck};
 use crate::output::{self, Output, OutputConfig};
 use crate::queue::{Queue, QueueEntry};
 
@@ -29,6 +36,13 @@ const TICK: Duration = Duration::from_millis(10);
 
 const SETTING_CURRENT: &str = "player.current_queue_item";
 const SETTING_POSITION: &str = "player.position_ms";
+const SETTING_CROSSFADE: &str = "player.crossfade_ms";
+const SETTING_NORMALIZE: &str = "player.normalize";
+
+pub const DEFAULT_CROSSFADE_MS: u32 = 6000;
+pub const MAX_CROSSFADE_MS: u32 = 12_000;
+/// Shorter fades than this are not worth it: the tracks just follow each other.
+const MIN_FADE_MS: u64 = 10;
 
 pub struct EngineConfig {
     pub db_path: PathBuf,
@@ -64,6 +78,12 @@ pub enum Command {
         preamp_db: f32,
     },
     SetEqEnabled(bool),
+    /// Crossfade length between tracks; 0 = gapless.
+    SetCrossfade {
+        ms: u32,
+    },
+    /// Volume normalization to a common loudness (EBU R128).
+    SetNormalization(bool),
     /// Registers a music folder and rescans the library.
     AddFolder(PathBuf),
     /// Rescans every registered folder.
@@ -92,9 +112,17 @@ pub struct PlayerState {
     pub duration_ms: Option<u64>,
 }
 
+/// Playback preferences, stored in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayerSettings {
+    pub crossfade_ms: u32,
+    pub normalize: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum Event {
     State(PlayerState),
+    Settings(PlayerSettings),
     Queue(Vec<QueueEntry>),
     /// A track could not be played and was skipped.
     TrackFailed {
@@ -208,8 +236,29 @@ impl Drop for Engine {
 struct Loaded {
     token: u64,
     entry: QueueEntry,
-    failure: DeckFailure,
+    info: Arc<DeckInfo>,
     duration_ms: Option<u64>,
+    /// Normalization gain in dB (applied only while normalization is on).
+    gain_db: f64,
+    album: Option<AlbumPos>,
+    /// Follows the previous deck on the same album: gapless, and the same gain.
+    continues_album: bool,
+}
+
+/// Where a track sits on its album.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AlbumPos {
+    album_id: i64,
+    disc: i64,
+    track: i64,
+}
+
+impl AlbumPos {
+    fn is_followed_by(self, next: AlbumPos) -> bool {
+        self.album_id == next.album_id
+            && ((next.disc == self.disc && next.track == self.track + 1)
+                || (next.disc == self.disc + 1 && next.track == 1))
+    }
 }
 
 struct Control {
@@ -232,6 +281,10 @@ struct Control {
     resume_ms: u64,
     next_token: u64,
     scan: ScanState,
+    analyzer: Option<Analyzer>,
+    settings: PlayerSettings,
+    /// The transition plan last sent to the mixer.
+    plan_sent: Option<TransitionPlan>,
 }
 
 #[derive(Default)]
@@ -258,6 +311,19 @@ impl Control {
             .and(read_setting(&reader, SETTING_POSITION))
             .unwrap_or(0)
             .max(0) as u64;
+        let settings = PlayerSettings {
+            crossfade_ms: read_setting(&reader, SETTING_CROSSFADE)
+                .map_or(DEFAULT_CROSSFADE_MS, |v| v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32),
+            normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
+        };
+        // Without analysis playback still works, just without measured loudness.
+        let analyzer = match Analyzer::start(&config.db_path, db.clone()) {
+            Ok(a) => Some(a),
+            Err(e) => {
+                let _ = events.send(Event::Error(format!("loudness analysis: {e}")));
+                None
+            }
+        };
 
         let control = Self {
             db,
@@ -277,9 +343,14 @@ impl Control {
             resume_ms,
             next_token: 1,
             scan: ScanState::default(),
+            analyzer,
+            settings,
+            plan_sent: None,
         };
+        control.emit(Event::Settings(control.settings));
         control.emit(Event::Queue(control.queue.entries()));
         control.emit_state();
+        control.prioritize_analysis();
         Ok(control)
     }
 
@@ -291,6 +362,8 @@ impl Control {
                 Err(RecvTimeoutError::Timeout) => {}
             }
             self.drain_mixer_events();
+            self.drain_analysis();
+            self.update_transition();
         }
         if self.status == Status::Playing {
             self.status = Status::Paused;
@@ -300,6 +373,7 @@ impl Control {
         if let Some(t) = self.scan.thread.take() {
             let _ = t.join(); // it holds a writer handle
         }
+        self.analyzer = None; // stops and joins; it writes through the writer
         self.output = None; // stop audio before the decks go away
         self.current = None;
         self.next = None;
@@ -389,17 +463,77 @@ impl Control {
         }
     }
 
-    fn load(&mut self, entry: QueueEntry, start_ms: u64) -> (Loaded, dap_mixer::DeckInput) {
+    fn album_pos(&self, track_id: i64) -> Option<AlbumPos> {
+        self.reader
+            .query_row(
+                "SELECT album_id, coalesce(disc_no, 1), track_no FROM track
+                 WHERE id = ?1 AND album_id IS NOT NULL AND track_no IS NOT NULL",
+                [track_id],
+                |r| {
+                    Ok(AlbumPos {
+                        album_id: r.get(0)?,
+                        disc: r.get(1)?,
+                        track: r.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Normalization gain from the stored analysis (a typical master when not analyzed).
+    fn track_gain_db(&self, track_id: i64) -> f64 {
+        let l = stored_loudness(&self.reader, track_id).unwrap_or_default();
+        normalization_gain_db(l.integrated_lufs, l.true_peak_db)
+    }
+
+    /// The linear gain a deck plays at.
+    fn deck_gain(&self, gain_db: f64) -> f32 {
+        if self.settings.normalize {
+            db_to_gain(gain_db as f32)
+        } else {
+            1.0
+        }
+    }
+
+    /// Loads a queue entry into a new deck. `after` is the deck it will follow, if any: the
+    /// next track of the same album keeps that deck's gain so the album plays as mastered.
+    fn load(
+        &mut self,
+        entry: QueueEntry,
+        start_ms: u64,
+        after: Option<&Loaded>,
+    ) -> (Loaded, dap_mixer::DeckInput) {
         let token = self.next_token;
         self.next_token += 1;
         let (path, duration_ms) = self.track_file(entry.track_id);
-        let (input, failure) = spawn_deck(token, path, start_ms, self.sample_rate, self.channels);
+        let album = self.album_pos(entry.track_id);
+        let continues_album = match (after.and_then(|a| a.album), album) {
+            (Some(prev), Some(next)) => prev.is_followed_by(next),
+            _ => false,
+        };
+        let gain_db = match after {
+            Some(prev) if continues_album => prev.gain_db,
+            _ => self.track_gain_db(entry.track_id),
+        };
+        let (input, info) = spawn_deck(
+            token,
+            path,
+            start_ms,
+            self.deck_gain(gain_db),
+            self.sample_rate,
+            self.channels,
+        );
         (
             Loaded {
                 token,
                 entry,
-                failure,
+                info,
                 duration_ms,
+                gain_db,
+                album,
+                continues_album,
             },
             input,
         )
@@ -410,7 +544,7 @@ impl Control {
         let Some(entry) = self.queue.get(index) else {
             return;
         };
-        let (loaded, input) = self.load(entry, start_ms);
+        let (loaded, input) = self.load(entry, start_ms, None);
         self.cursor = Some(entry.id);
         self.position_frames = input.start_frame;
         self.resume_ms = 0;
@@ -435,7 +569,9 @@ impl Control {
         }
         match want {
             Some(entry) if self.current.is_some() => {
-                let (loaded, input) = self.load(entry, 0);
+                let current = self.current.take();
+                let (loaded, input) = self.load(entry, 0, current.as_ref());
+                self.current = current;
                 self.next = Some(loaded);
                 self.send_mixer(MixerCommand::SetNext(input));
             }
@@ -445,6 +581,123 @@ impl Control {
                 }
             }
         }
+        self.prioritize_analysis();
+    }
+
+    /// The upcoming tracks are measured first, so they play normalized.
+    fn prioritize_analysis(&self) {
+        let Some(analyzer) = &self.analyzer else {
+            return;
+        };
+        let start = self.cursor_index().unwrap_or(0);
+        let mut ids: Vec<i64> = (start + 1..start + 21)
+            .filter_map(|i| self.queue.get(i))
+            .map(|e| e.track_id)
+            .collect();
+        if let Some(e) = self.queue.get(start) {
+            ids.push(e.track_id);
+        }
+        analyzer.prioritize(ids);
+    }
+
+    /// The crossfade the mixer should do out of the current deck, if any.
+    fn wanted_plan(&self) -> Option<TransitionPlan> {
+        if self.settings.crossfade_ms == 0 {
+            return None;
+        }
+        let current = self.current.as_ref()?;
+        let next = self.next.as_ref()?;
+        if next.continues_album || current.info.failure.get().is_some() {
+            return None;
+        }
+        let end = current.info.end_frame()?;
+        let rate = u64::from(self.sample_rate);
+        // Short tracks fade for at most half their length.
+        let mut len = (u64::from(self.settings.crossfade_ms) * rate / 1000).min(end / 2);
+        if let Some(next_end) = next.info.end_frame() {
+            len = len.min(next_end / 2);
+        }
+        if len < MIN_FADE_MS * rate / 1000 {
+            return None;
+        }
+        Some(TransitionPlan {
+            token: current.token,
+            start_frame: end - len,
+            end_frame: end,
+        })
+    }
+
+    fn update_transition(&mut self) {
+        let want = self.wanted_plan();
+        if want != self.plan_sent {
+            self.plan_sent = want;
+            self.send_mixer(match want {
+                Some(plan) => MixerCommand::SetTransition(plan),
+                None => MixerCommand::ClearTransition,
+            });
+        }
+    }
+
+    /// A freshly analyzed track that is loaded but not playing yet gets its real gain.
+    fn drain_analysis(&mut self) {
+        let Some(analyzer) = &self.analyzer else {
+            return;
+        };
+        let done: Vec<i64> = analyzer.done.try_iter().collect();
+        for track_id in done {
+            let Some(next) = self.next.as_ref() else {
+                continue;
+            };
+            if next.entry.track_id != track_id || next.continues_album {
+                continue;
+            }
+            let gain_db = self.track_gain_db(track_id);
+            let gain = self.deck_gain(gain_db);
+            let token = next.token;
+            if let Some(next) = self.next.as_mut() {
+                next.gain_db = gain_db;
+            }
+            self.send_mixer(MixerCommand::SetDeckGain { token, gain });
+        }
+    }
+
+    fn save_setting(&self, key: &'static str, value: String) {
+        self.db.run(move |c| {
+            let _ = c.execute(
+                "INSERT INTO setting (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = ?2",
+                params![key, value],
+            );
+        });
+    }
+
+    fn set_normalization(&mut self, on: bool) {
+        if self.settings.normalize == on {
+            return;
+        }
+        self.settings.normalize = on;
+        self.save_setting(SETTING_NORMALIZE, i64::from(on).to_string());
+        let decks: Vec<(u64, f64)> = [self.current.as_ref(), self.next.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|l| (l.token, l.gain_db))
+            .collect();
+        for (token, gain_db) in decks {
+            let gain = self.deck_gain(gain_db);
+            self.send_mixer(MixerCommand::SetDeckGain { token, gain });
+        }
+        self.emit(Event::Settings(self.settings));
+    }
+
+    fn set_crossfade(&mut self, ms: u32) {
+        let ms = ms.min(MAX_CROSSFADE_MS);
+        if self.settings.crossfade_ms == ms {
+            return;
+        }
+        self.settings.crossfade_ms = ms;
+        self.save_setting(SETTING_CROSSFADE, ms.to_string());
+        self.emit(Event::Settings(self.settings));
+        // The plan follows on the next tick.
     }
 
     fn stop(&mut self) {
@@ -584,6 +837,8 @@ impl Control {
                 preamp_db,
             }),
             Command::SetEqEnabled(on) => self.send_mixer(MixerCommand::SetEqEnabled(on)),
+            Command::SetCrossfade { ms } => self.set_crossfade(ms),
+            Command::SetNormalization(on) => self.set_normalization(on),
             Command::AddFolder(path) => {
                 let result = self.db.call(move |c| add_root(c, &path));
                 match result {
@@ -669,6 +924,7 @@ impl Control {
         }
         self.emit(Event::Queue(self.queue.entries()));
         self.emit_state();
+        self.prioritize_analysis();
     }
 
     // ----- mixer events --------------------------------------------------------------
@@ -704,7 +960,7 @@ impl Control {
             return;
         }
         let ended = self.current.take().expect("current");
-        match ended.failure.get() {
+        match ended.info.failure.get() {
             Some(error) => self.emit(Event::TrackFailed {
                 track_id: ended.entry.track_id,
                 error: error.clone(),
@@ -724,7 +980,14 @@ impl Control {
 
     fn on_started(&mut self, token: u64) {
         if self.next.as_ref().is_some_and(|l| l.token == token) {
-            // Gapless switch done by the mixer.
+            // Gapless switch or the start of a crossfade, done by the mixer. In a crossfade
+            // the previous track is still fading out: it counts as played now, and its own
+            // end event (no longer current) is ignored.
+            if let Some(previous) = self.current.take()
+                && previous.info.failure.get().is_none()
+            {
+                self.record_play(&previous);
+            }
             let next = self.next.take().expect("next");
             self.cursor = Some(next.entry.id);
             self.position_frames = 0;
