@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import 'package:flutter/material.dart';
@@ -358,6 +359,41 @@ String formatMs(int? ms) {
   return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
 }
 
+/// A cover image file from the Rust cover cache, or a placeholder when there is none.
+class CoverImage extends StatelessWidget {
+  const CoverImage({super.key, required this.path, required this.size});
+
+  final String? path;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final placeholder = Container(
+      width: size,
+      height: size,
+      color: scheme.surfaceContainerHighest,
+      child: Icon(Icons.album, size: size * 0.6, color: scheme.onSurfaceVariant),
+    );
+    final p = path;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: p == null
+          ? placeholder
+          : Image.file(
+              File(p),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              // Decode at display size, not at the file's size.
+              cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).round(),
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => placeholder,
+            ),
+    );
+  }
+}
+
 class TrackTile extends StatelessWidget {
   const TrackTile({super.key, required this.track, this.onTap, this.trailing, this.selected = false});
 
@@ -368,17 +404,16 @@ class TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = [track.artist, track.album].where((s) => s.isNotEmpty).join(' · ');
+    final subtitle = [track.artist, track.album, formatMs(track.durationMs)]
+        .where((s) => s.isNotEmpty)
+        .join(' · ');
     return ListTile(
       dense: true,
       selected: selected,
       enabled: !track.missing,
       title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      leading: SizedBox(
-        width: 40,
-        child: Center(child: Text(formatMs(track.durationMs), style: Theme.of(context).textTheme.bodySmall)),
-      ),
+      leading: CoverImage(path: track.coverSmall, size: 40),
       trailing: trailing,
       onTap: onTap,
     );
@@ -512,6 +547,8 @@ class _PlayerBarState extends State<PlayerBar> {
                   Text(formatMs(duration > 0 ? duration : null)),
                 ]),
                 Row(children: [
+                  CoverImage(path: t?.coverMedium, size: 48),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(t?.title ?? 'Nic nehraje',

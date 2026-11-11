@@ -40,6 +40,25 @@ td.Uint8List toneWav() {
   return b.toBytes();
 }
 
+/// A 2x2 24-bit BMP used as the folder cover.
+td.Uint8List coverBmp() {
+  final b = td.BytesBuilder();
+  void u32(int v) => b.add((td.ByteData(4)..setUint32(0, v, td.Endian.little)).buffer.asUint8List());
+  void u16(int v) => b.add((td.ByteData(2)..setUint16(0, v, td.Endian.little)).buffer.asUint8List());
+  b.add('BM'.codeUnits);
+  u32(54 + 16);
+  u32(0);
+  u32(54);
+  u32(40);
+  u32(2);
+  u32(2);
+  u16(1);
+  u16(24);
+  b.add(List.filled(24, 0));
+  b.add([0, 0, 255, 0, 255, 0, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0]);
+  return b.toBytes();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -52,6 +71,7 @@ void main() {
       final dir = await Directory.systemTemp.createTemp('dap_bridge_');
       final music = await Directory('${dir.path}/music').create();
       await File('${music.path}/tone.wav').writeAsBytes(toneWav());
+      await File('${music.path}/cover.bmp').writeAsBytes(coverBmp());
 
       final events = <AppEvent>[];
       step('start engine');
@@ -88,6 +108,11 @@ void main() {
       final hits = await search(query: 'ton', limit: 10);
       expect(hits.map((t) => t.title), ['tone']);
       expect(hits.single.durationMs, inInclusiveRange(990, 1010));
+      final t = hits.single;
+      for (final cover in [t.coverSmall, t.coverMedium, t.coverLarge]) {
+        expect(cover, isNotNull);
+        expect(File(cover!).existsSync(), isTrue, reason: cover);
+      }
 
       step('queue and play');
       final mark = events.length;

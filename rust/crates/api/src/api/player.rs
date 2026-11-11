@@ -227,11 +227,13 @@ fn track_meta(reader: &mut Option<Connection>, db: &Path, id: i64) -> Option<Tra
     if reader.is_none() {
         *reader = dap_library::db::open_reader(db).ok();
     }
-    let t = super::library::query_track(reader.as_ref()?, id).ok()??;
+    let covers = dap_library::covers::covers_dir(db);
+    let t = super::library::query_track(reader.as_ref()?, &covers, id).ok()??;
     Some(TrackMeta {
         title: t.title,
         artist: t.artist,
         album: t.album,
+        cover: t.cover_large.map(PathBuf::from),
     })
 }
 

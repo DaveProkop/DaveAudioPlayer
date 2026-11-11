@@ -1,6 +1,7 @@
 //! Folder scanner, SQLite library, full-text search and playlists.
 
 pub mod catalog;
+pub mod covers;
 pub mod db;
 pub mod scanner;
 pub mod search;

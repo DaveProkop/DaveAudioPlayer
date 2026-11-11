@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `close_reader`, `query_track`, `row_to_track`, `with_reader`
+// These functions are ignored because they are not marked as `pub`: `close_reader`, `current_covers_dir`, `query_track`, `row_to_track`, `with_reader`
 
 /// Number of playable tracks.
 Future<int> trackCount() => RustLib.instance.api.crateApiLibraryTrackCount();
@@ -41,6 +41,11 @@ class TrackInfo {
   final PlatformInt64? durationMs;
   final bool missing;
 
+  /// Cover image files (64 px, 256 px, up to 1024 px); `None` when the track has none.
+  final String? coverSmall;
+  final String? coverMedium;
+  final String? coverLarge;
+
   const TrackInfo({
     required this.id,
     required this.title,
@@ -49,6 +54,9 @@ class TrackInfo {
     this.trackNo,
     this.durationMs,
     required this.missing,
+    this.coverSmall,
+    this.coverMedium,
+    this.coverLarge,
   });
 
   @override
@@ -59,7 +67,10 @@ class TrackInfo {
       album.hashCode ^
       trackNo.hashCode ^
       durationMs.hashCode ^
-      missing.hashCode;
+      missing.hashCode ^
+      coverSmall.hashCode ^
+      coverMedium.hashCode ^
+      coverLarge.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -72,5 +83,8 @@ class TrackInfo {
           album == other.album &&
           trackNo == other.trackNo &&
           durationMs == other.durationMs &&
-          missing == other.missing;
+          missing == other.missing &&
+          coverSmall == other.coverSmall &&
+          coverMedium == other.coverMedium &&
+          coverLarge == other.coverLarge;
 }

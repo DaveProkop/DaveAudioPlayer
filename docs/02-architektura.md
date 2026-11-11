@@ -78,6 +78,15 @@ Pravidla:
 - velké seznamy stránkovaně, Flutter virtualizuje
 - obaly přes cestu k souboru v cache, ne jako bajty přes most
 
+## Obaly alb
+Sken (`dap_library::covers`) bere obal z tagů (přední strana, jinak první obrázek), jinak
+obrázek ve složce (`cover`, `folder`, `front`, `album`, `albumart` + jpg/png/webp/bmp).
+Obrázek se deduplikuje podle hashe obsahu a uloží jednou do složky `covers` vedle databáze
+jako JPEG ve třech velikostech: 64 px (seznamy), 256 px (přehrávač, alba) a ≤ 1024 px
+(SMTC, notifikace, zamčená obrazovka). Skladba dostane vlastní `cover_id`, album první
+nalezený obal. Ruční zámek pole `cover` v `tag_edit` rescan respektuje. Kořen naskenovaný
+před zavedením obalů dostane obaly jednou i pro nezměněné soubory (`scan.covers_version.<id>`).
+
 ## Platformní specifika
 **Android:** engine ve stejném procesu, foreground service přes `audio_service`, audio focus
 (hovor, navigace) a pauza při odpojení sluchátek přes `audio_session`, AAudio na nativních 48 kHz.

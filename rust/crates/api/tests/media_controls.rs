@@ -30,8 +30,28 @@ fn find_session(title: &str) -> Option<GlobalSystemMediaTransportControlsSession
     None
 }
 
+/// A 2x2 24-bit BMP, enough for Windows to accept as a thumbnail.
+fn write_bmp(path: &std::path::Path) {
+    let mut b = Vec::new();
+    b.extend_from_slice(b"BM");
+    b.extend_from_slice(&(54u32 + 16).to_le_bytes());
+    b.extend_from_slice(&[0; 4]);
+    b.extend_from_slice(&54u32.to_le_bytes());
+    b.extend_from_slice(&40u32.to_le_bytes());
+    b.extend_from_slice(&2i32.to_le_bytes());
+    b.extend_from_slice(&2i32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&24u16.to_le_bytes());
+    b.extend_from_slice(&[0; 24]);
+    // Two rows of two pixels, each row padded to 4 bytes.
+    b.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0]);
+    std::fs::write(path, b).unwrap();
+}
+
 #[test]
 fn smtc_session_shows_track_and_forwards_commands() {
+    let cover = std::env::temp_dir().join(format!("dap-smtc-cover-{}.bmp", std::process::id()));
+    write_bmp(&cover);
     let (tx, rx) = unbounded();
     let mut controls = MediaControls::new(tx).expect("SMTC available");
     let title = format!("dap smtc test {}", std::process::id());
@@ -40,6 +60,7 @@ fn smtc_session_shows_track_and_forwards_commands() {
             title: title.clone(),
             artist: "Test Artist".into(),
             album: "Test Album".into(),
+            cover: Some(cover.clone()),
         }))
         .unwrap();
     controls
@@ -55,6 +76,17 @@ fn smtc_session_shows_track_and_forwards_commands() {
     let props = session.TryGetMediaPropertiesAsync().unwrap().join().unwrap();
     assert_eq!(props.Artist().unwrap().to_string(), "Test Artist");
     assert_eq!(props.AlbumTitle().unwrap().to_string(), "Test Album");
+    // The thumbnail is published asynchronously; poll for it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let thumbnail = loop {
+        let props = session.TryGetMediaPropertiesAsync().unwrap().join().unwrap();
+        match props.Thumbnail() {
+            Ok(t) => break Ok(t),
+            Err(e) if Instant::now() > deadline => break Err(e),
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    };
+    assert!(thumbnail.is_ok(), "the cover reaches Windows: {thumbnail:?}");
 
     assert!(session.TryPauseAsync().unwrap().join().unwrap());
     assert!(matches!(
@@ -80,4 +112,5 @@ fn smtc_session_shows_track_and_forwards_commands() {
     ));
 
     drop(controls);
+    let _ = std::fs::remove_file(&cover);
 }

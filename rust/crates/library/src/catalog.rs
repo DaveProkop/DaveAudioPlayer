@@ -22,6 +22,7 @@ pub mod field {
     pub const DISC_NO: &str = "disc_no";
     pub const COMMENT: &str = "comment";
     pub const LYRICS: &str = "lyrics";
+    pub const COVER: &str = "cover";
 }
 
 const VARIOUS_ARTISTS: &str = "Various Artists";
@@ -181,6 +182,26 @@ pub fn locked_fields(conn: &Connection, track_id: i64) -> Result<HashSet<String>
     let mut st = conn.prepare_cached("SELECT DISTINCT field FROM tag_edit WHERE track_id = ?1")?;
     let rows = st.query_map([track_id], |r| r.get::<_, String>(0))?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+/// Sets a track's own cover (unless the user locked it) and gives its album that cover
+/// when the album has none yet.
+pub fn set_track_cover(conn: &Connection, track_id: i64, cover_id: Option<i64>) -> Result<()> {
+    if locked_fields(conn, track_id)?.contains(field::COVER) {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE track SET cover_id = ?2 WHERE id = ?1",
+        params![track_id, cover_id],
+    )?;
+    if let Some(cover_id) = cover_id {
+        conn.execute(
+            "UPDATE album SET cover_id = ?2
+             WHERE id = (SELECT album_id FROM track WHERE id = ?1) AND cover_id IS NULL",
+            params![track_id, cover_id],
+        )?;
+    }
+    Ok(())
 }
 
 /// Creates the track for `file_id`, or updates it while respecting locked fields.

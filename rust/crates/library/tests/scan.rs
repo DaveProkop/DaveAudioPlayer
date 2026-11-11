@@ -363,3 +363,88 @@ fn corrupt_file_is_reported_and_cancel_stops_safely() {
     assert!(r.failed[0].0.ends_with("broken.mp3"));
     assert_eq!(seen, 4, "progress reports every file");
 }
+
+fn png(seed: u8) -> Vec<u8> {
+    let img = image::RgbImage::from_fn(300, 300, |x, y| image::Rgb([x as u8, y as u8, seed]));
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    buf.into_inner()
+}
+
+fn scan_with_covers(conn: &mut Connection, root: i64, dir: &Path, covers: &Path) {
+    let mut job = dap_library::ScanJob::walk(root, dir.to_path_buf())
+        .unwrap()
+        .with_covers(covers.to_path_buf());
+    while !job.step(conn, &AtomicBool::new(false), |_| {}).unwrap() {}
+}
+
+fn cover_of(conn: &Connection, title: &str) -> (Option<i64>, Option<i64>) {
+    conn.query_row(
+        "SELECT t.cover_id, al.cover_id FROM track t LEFT JOIN album al ON al.id = t.album_id
+         WHERE t.title = ?1",
+        [title],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn covers_come_from_tags_or_the_folder_also_for_an_existing_library() {
+    let dir = TempDir::new("covers");
+    let music = dir.path("music");
+    let covers = dir.path("covers");
+    let meta = |title, album, track| Meta {
+        title,
+        artist: "A",
+        album,
+        track,
+        genre: "Rock",
+    };
+    write_track(&music.join("one/01.wav"), 1, &meta("Folder 1", "One", 1));
+    write_track(&music.join("one/02.wav"), 2, &meta("Folder 2", "One", 2));
+    std::fs::write(music.join("one/Cover.PNG"), png(1)).unwrap();
+    let embedded = music.join("two/01.wav");
+    write_track(&embedded, 3, &meta("Embedded", "Two", 1));
+    let mut tag = Tag::new(TagType::Id3v2);
+    tag.set_title("Embedded".into());
+    tag.set_album("Two".into());
+    tag.set_track(1);
+    tag.push_picture(
+        lofty::picture::Picture::unchecked(png(2))
+            .pic_type(lofty::picture::PictureType::CoverFront)
+            .mime_type(lofty::picture::MimeType::Png)
+            .build(),
+    );
+    tag.save_to_path(&embedded, WriteOptions::default()).unwrap();
+    write_track(&music.join("three/01.wav"), 4, &meta("Bare", "Three", 1));
+
+    let mut conn = open_in_memory().unwrap();
+    let root = add_root(&conn, &music).unwrap();
+    // A library scanned before covers existed…
+    scan(&mut conn, root);
+    assert_eq!(count(&conn, "SELECT count(*) FROM track WHERE cover_id IS NOT NULL"), 0);
+    // …gets them on the next scan, although no file changed.
+    scan_with_covers(&mut conn, root, &music, &covers);
+
+    let (f1, album_one) = cover_of(&conn, "Folder 1");
+    let (f2, _) = cover_of(&conn, "Folder 2");
+    assert!(f1.is_some() && f1 == f2, "one folder image, one cover");
+    assert_eq!(album_one, f1);
+    let (e, album_two) = cover_of(&conn, "Embedded");
+    assert!(e.is_some() && e != f1);
+    assert_eq!(album_two, e);
+    assert_eq!(cover_of(&conn, "Bare"), (None, None));
+    assert_eq!(count(&conn, "SELECT count(*) FROM cover"), 2);
+    assert_eq!(
+        std::fs::read_dir(&covers).unwrap().count(),
+        6,
+        "three sizes per cover"
+    );
+
+    // Done once: a further scan does not touch unchanged files again.
+    std::fs::remove_dir_all(&covers).unwrap();
+    scan_with_covers(&mut conn, root, &music, &covers);
+    assert!(!covers.exists());
+}

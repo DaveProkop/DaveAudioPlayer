@@ -58,10 +58,10 @@ CREATE TABLE cover (
     id          INTEGER PRIMARY KEY,
     hash        BLOB    NOT NULL UNIQUE,      -- deduplikace stejných obalů
     source      TEXT    NOT NULL,             -- embedded | folder | coverartarchive | user
-    cache_path  TEXT    NOT NULL,             -- originál v mezipaměti
-    width       INTEGER,
+    cache_path  TEXT    NOT NULL,             -- název souboru ve složce covers (JPEG ≤ 1024 px)
+    width       INTEGER,                      -- rozměry originálu
     height      INTEGER
-);                                            -- náhledy: <cache>/<hash>_{64,256}.webp
+);                                            -- náhledy: covers/<hash>_{64,256}.jpg
 
 CREATE TABLE album (
     id               INTEGER PRIMARY KEY,

@@ -1215,8 +1215,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TrackInfo dco_decode_track_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return TrackInfo(
       id: dco_decode_i_64(arr[0]),
       title: dco_decode_String(arr[1]),
@@ -1225,6 +1225,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       trackNo: dco_decode_opt_box_autoadd_u_32(arr[4]),
       durationMs: dco_decode_opt_box_autoadd_i_64(arr[5]),
       missing: dco_decode_bool(arr[6]),
+      coverSmall: dco_decode_opt_String(arr[7]),
+      coverMedium: dco_decode_opt_String(arr[8]),
+      coverLarge: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -1599,6 +1602,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_trackNo = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_durationMs = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_missing = sse_decode_bool(deserializer);
+    var var_coverSmall = sse_decode_opt_String(deserializer);
+    var var_coverMedium = sse_decode_opt_String(deserializer);
+    var var_coverLarge = sse_decode_opt_String(deserializer);
     return TrackInfo(
       id: var_id,
       title: var_title,
@@ -1607,6 +1613,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       trackNo: var_trackNo,
       durationMs: var_durationMs,
       missing: var_missing,
+      coverSmall: var_coverSmall,
+      coverMedium: var_coverMedium,
+      coverLarge: var_coverLarge,
     );
   }
 
@@ -1970,6 +1979,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.trackNo, serializer);
     sse_encode_opt_box_autoadd_i_64(self.durationMs, serializer);
     sse_encode_bool(self.missing, serializer);
+    sse_encode_opt_String(self.coverSmall, serializer);
+    sse_encode_opt_String(self.coverMedium, serializer);
+    sse_encode_opt_String(self.coverLarge, serializer);
   }
 
   @protected

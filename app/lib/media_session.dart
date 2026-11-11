@@ -112,9 +112,14 @@ class DapAudioHandler extends BaseAudioHandler with SeekHandler {
     final track = _controller.currentTrack;
     final itemId = s?.queueItemId;
     final duration = s?.durationMs ?? track?.durationMs;
+    // Lock screen and notification load the art from the cover cache file.
+    final art = track?.coverLarge;
+    final artUri = art == null ? null : Uri.file(art);
     if (itemId != _shownQueueItem ||
         duration != _shownDuration ||
-        (track != null && mediaItem.value?.title != track.title)) {
+        (track != null &&
+            (mediaItem.value?.title != track.title ||
+                mediaItem.value?.artUri != artUri))) {
       _shownQueueItem = itemId;
       _shownDuration = duration;
       mediaItem.add(
@@ -128,6 +133,7 @@ class DapAudioHandler extends BaseAudioHandler with SeekHandler {
                 duration: duration == null
                     ? null
                     : Duration(milliseconds: duration),
+                artUri: artUri,
               ),
       );
     }

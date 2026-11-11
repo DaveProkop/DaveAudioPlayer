@@ -14,6 +14,8 @@ pub struct TrackMeta {
     pub title: String,
     pub artist: String,
     pub album: String,
+    /// Cover image file shown with the track.
+    pub cover: Option<std::path::PathBuf>,
 }
 
 /// Playback state as the controls need it.
@@ -55,7 +57,14 @@ mod imp {
         SystemMediaTransportControlsButtonPressedEventArgs,
         SystemMediaTransportControlsTimelineProperties,
     };
+    use windows::Storage::StorageFile;
+    use windows::Storage::Streams::RandomAccessStreamReference;
     use windows::core::{HSTRING, Ref, Result};
+
+    fn thumbnail(path: &std::path::Path) -> Result<RandomAccessStreamReference> {
+        let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))?.join()?;
+        RandomAccessStreamReference::CreateFromFile(&file)
+    }
 
     fn span(ms: u64) -> TimeSpan {
         TimeSpan {
@@ -131,6 +140,9 @@ mod imp {
                     music.SetTitle(&HSTRING::from(&m.title))?;
                     music.SetArtist(&HSTRING::from(&m.artist))?;
                     music.SetAlbumTitle(&HSTRING::from(&m.album))?;
+                    // A missing or unreadable image just leaves the thumbnail empty.
+                    let thumbnail = m.cover.as_deref().and_then(|p| thumbnail(p).ok());
+                    display.SetThumbnail(thumbnail.as_ref())?;
                 }
                 None => display.ClearAll()?,
             }

@@ -282,6 +282,8 @@ struct Control {
     next_token: u64,
     scan: ScanState,
     analyzer: Option<Analyzer>,
+    /// Where scans store cover images.
+    covers: PathBuf,
     settings: PlayerSettings,
     /// The transition plan last sent to the mixer.
     plan_sent: Option<TransitionPlan>,
@@ -344,6 +346,7 @@ impl Control {
             next_token: 1,
             scan: ScanState::default(),
             analyzer,
+            covers: dap_library::covers::covers_dir(&config.db_path),
             settings,
             plan_sent: None,
         };
@@ -866,6 +869,7 @@ impl Control {
         self.scan.cancel.store(false, Ordering::Relaxed);
         let db = self.db.clone();
         let events = self.events.clone();
+        let covers = self.covers.clone();
         let (running, again, cancel) = (
             self.scan.running.clone(),
             self.scan.again.clone(),
@@ -876,7 +880,7 @@ impl Control {
             .spawn(move || {
                 loop {
                     again.store(false, Ordering::Release);
-                    let summary = scan_all(&db, &events, &cancel);
+                    let summary = scan_all(&db, &events, &cancel, &covers);
                     let _ = events.send(Event::ScanFinished(summary));
                     if cancel.load(Ordering::Relaxed) || !again.load(Ordering::Acquire) {
                         break;
@@ -1009,7 +1013,12 @@ fn read_setting(conn: &Connection, key: &str) -> Option<i64> {
     .and_then(|v| v.trim().parse().ok())
 }
 
-fn scan_all(db: &DbWriter, events: &Sender<Event>, cancel: &Arc<AtomicBool>) -> ScanSummary {
+fn scan_all(
+    db: &DbWriter,
+    events: &Sender<Event>,
+    cancel: &Arc<AtomicBool>,
+    covers: &std::path::Path,
+) -> ScanSummary {
     let mut summary = ScanSummary::default();
     let roots: Vec<(i64, String)> = db
         .call(|c| {
@@ -1029,7 +1038,7 @@ fn scan_all(db: &DbWriter, events: &Sender<Event>, cancel: &Arc<AtomicBool>) -> 
         let folder = PathBuf::from(&path);
         // Walking the folder is file-system work only; it stays off the writer thread.
         let mut job = match ScanJob::walk(root_id, folder.clone()) {
-            Ok(j) => j,
+            Ok(j) => j.with_covers(covers.to_path_buf()),
             Err(e) => {
                 let _ = events.send(Event::Error(e.to_string()));
                 continue;

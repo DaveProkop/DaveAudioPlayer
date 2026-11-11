@@ -5,6 +5,8 @@
 //!   the track with its rating, stats and playlist entries
 //! - files that disappeared are flagged `missing`, never deleted
 //! - an unreachable root (unplugged drive) is an error and marks nothing as missing
+//! - covers (embedded, else an image in the folder) are stored when a covers folder is
+//!   given; a root scanned before covers existed gets them once for all its files
 //!
 //! Database work runs on the single DB writer thread, in batches (see [`ScanJob`]).
 
@@ -19,6 +21,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use walkdir::WalkDir;
 
 use crate::catalog::{self, NameCache, now_ms};
+use crate::covers::{FolderCovers, store_cover};
 use crate::db::{DbError, Result};
 
 /// Extensions the player can decode (Opus is not supported yet).
@@ -31,6 +34,8 @@ pub const AUDIO_EXTENSIONS: &[&str] = &[
 const BATCH: usize = 50;
 /// Bytes hashed from the start and from the end of a file.
 const HASH_SPAN: u64 = 16 * 1024;
+/// Bumped when cover extraction changes: every root then gets its covers again once.
+const COVERS_VERSION: &str = "1";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScanReport {
@@ -115,6 +120,19 @@ pub struct ScanJob {
     gone: Vec<i64>,
     names: NameCache,
     report: ScanReport,
+    covers: Option<Covers>,
+}
+
+/// Cover handling during a scan.
+struct Covers {
+    dir: PathBuf,
+    folders: FolderCovers,
+    /// Also unchanged files get their covers (first scan with covers).
+    refresh: bool,
+}
+
+fn covers_setting(root_id: i64) -> String {
+    format!("scan.covers_version.{root_id}")
 }
 
 impl ScanJob {
@@ -134,7 +152,18 @@ impl ScanJob {
             gone: Vec::new(),
             names: NameCache::default(),
             report,
+            covers: None,
         })
+    }
+
+    /// Stores covers in `dir` while scanning (see [`crate::covers`]).
+    pub fn with_covers(mut self, dir: PathBuf) -> Self {
+        self.covers = Some(Covers {
+            dir,
+            folders: FolderCovers::default(),
+            refresh: false,
+        });
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -187,6 +216,7 @@ impl ScanJob {
                 f,
                 k.as_ref(),
                 &mut self.report,
+                self.covers.as_mut(),
             ) {
                 match e {
                     DbError::Sqlite(_) | DbError::TooNew { .. } => return Err(e),
@@ -207,6 +237,13 @@ impl ScanJob {
             self.report.missing += usize::from(still_missing);
         }
         if !self.report.cancelled {
+            if self.covers.is_some() {
+                conn.execute(
+                    "INSERT INTO setting (key, value) VALUES (?1, ?2)
+                     ON CONFLICT (key) DO UPDATE SET value = ?2",
+                    params![covers_setting(self.root_id), COVERS_VERSION],
+                )?;
+            }
             progress(&ScanProgress {
                 processed: total,
                 total,
@@ -221,6 +258,16 @@ impl ScanJob {
     /// location is processed. Folders that could not be read are skipped: their files are
     /// not known to be gone.
     fn prepare(&mut self, conn: &mut Connection) -> Result<()> {
+        if let Some(covers) = self.covers.as_mut() {
+            let done: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM setting WHERE key = ?1",
+                    [covers_setting(self.root_id)],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            covers.refresh = done.as_deref() != Some(COVERS_VERSION);
+        }
         let known: HashMap<String, Known> = {
             let mut st = conn.prepare(
                 "SELECT id, rel_path, size, mtime, missing FROM file WHERE root_id = ?1",
@@ -330,6 +377,7 @@ fn process_file(
     f: &Found,
     known: Option<&Known>,
     report: &mut ScanReport,
+    covers: Option<&mut Covers>,
 ) -> Result<()> {
     if let Some(k) = known
         && !k.missing
@@ -337,6 +385,21 @@ fn process_file(
         && k.mtime == f.mtime
     {
         report.unchanged += 1;
+        if let Some(c) = covers
+            && c.refresh
+        {
+            let track_id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM track WHERE file_id = ?1 AND start_ms = 0",
+                    [k.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(track_id) = track_id {
+                let embedded = dap_tags::read(&f.abs).ok().and_then(|t| t.cover);
+                assign_cover(conn, c, track_id, &f.abs, embedded.as_deref())?;
+            }
+        }
         return Ok(());
     }
 
@@ -409,8 +472,31 @@ fn process_file(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    catalog::upsert_track(conn, names, file_id, &tags.tags, &fallback_title)?;
+    let track_id = catalog::upsert_track(conn, names, file_id, &tags.tags, &fallback_title)?;
+    if let Some(c) = covers {
+        assign_cover(conn, c, track_id, &f.abs, tags.cover.as_deref())?;
+    }
     Ok(())
+}
+
+/// The embedded cover if there is a readable one, else the folder's image.
+fn assign_cover(
+    conn: &Connection,
+    covers: &mut Covers,
+    track_id: i64,
+    file: &Path,
+    embedded: Option<&[u8]>,
+) -> Result<()> {
+    let mut cover_id = match embedded {
+        Some(bytes) => store_cover(conn, &covers.dir, bytes, "embedded")?,
+        None => None,
+    };
+    if cover_id.is_none()
+        && let Some(dir) = file.parent()
+    {
+        cover_id = covers.folders.get(conn, &covers.dir, dir)?;
+    }
+    catalog::set_track_cover(conn, track_id, cover_id)
 }
 
 fn find_moved(conn: &Connection, hash: &[u8], size: u64) -> Result<Option<i64>> {

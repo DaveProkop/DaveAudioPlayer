@@ -19,7 +19,8 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a ověřovací
 - **Jen lokální soubory.** Spotify a YouTube se NEintegrují (nejde je míchat do fronty s vlastním DSP).
 - Hlavní Rust crate: symphonia (dekódování), cpal (výstup WASAPI/AAudio), rubato (resampling),
   rtrb (lock-free fronty), crossbeam-channel, rusqlite (bundled, FTS5), lofty (tagy),
-  ebur128, signalsmith-stretch (time-stretch, MIT), rusty-chromaprint, reqwest + tokio, notify, walkdir.
+  ebur128, signalsmith-stretch (time-stretch, MIT), rusty-chromaprint, reqwest + tokio, notify, walkdir,
+  image (jen jpeg/png/webp/bmp; náhledy obalů jako JPEG).
 - Flutter: `audio_service` + `audio_session` pro Android (foreground service, notifikace, lock screen,
   audio focus). Windows SMTC je v Rustu (crate `windows`, modul `dap_api::media_controls`).
 - Databáze: SQLite ve WAL režimu, jedno zapisující vlákno, více čtecích spojení.
@@ -69,6 +70,7 @@ DaveAudioPlayer/
 Hotovo: knihovna (sken, tagy, hledání), fronta v DB, gapless (dva decky), 10pásmový EQ, bridge
 do Flutteru ověřený integračním testem na Windows, ověřovací UI, ovládání médií (Windows SMTC
 v Rustu ověřené testem, Android `audio_service`), crossfade s vyrovnáním hlasitosti
-(EBU R128, −18 LUFS, analýza na pozadí; navazující skladby alba gapless).
-Zbývá do MVP: ověření na Android zařízení (včetně přehrávání se zhasnutým displejem), obaly alb
-(i do SMTC a notifikace), sledování složek (notify), návrh UI.
+(EBU R128, −18 LUFS, analýza na pozadí; navazující skladby alba gapless), obaly alb (z tagů
+nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci).
+Zbývá do MVP: ověření na Android zařízení (včetně přehrávání se zhasnutým displejem),
+sledování složek (notify), návrh UI.

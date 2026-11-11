@@ -30,6 +30,8 @@ windows = { version = "0.62.2", features = [
     "Foundation",
     "Media",
     "Media_Playback",
+    "Storage",
+    "Storage_Streams",
     "Win32_System_WinRT",
 ] }
 

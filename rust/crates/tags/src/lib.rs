@@ -7,6 +7,7 @@ use std::fmt;
 use std::path::Path;
 
 use lofty::config::ParseOptions;
+use lofty::picture::PictureType;
 use lofty::prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Tag;
@@ -48,6 +49,8 @@ pub struct AudioProperties {
 pub struct FileTags {
     pub tags: TrackTags,
     pub properties: AudioProperties,
+    /// Embedded cover image bytes (the front cover if marked, else the first picture).
+    pub cover: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -68,11 +71,10 @@ impl fmt::Display for TagError {
 
 impl std::error::Error for TagError {}
 
-/// Reads tags and audio properties. Cover art bytes are not loaded (only their presence).
+/// Reads tags, audio properties and the embedded cover image.
 pub fn read(path: &Path) -> Result<FileTags, TagError> {
     let file = std::fs::File::open(path).map_err(TagError::Io)?;
-    let probe = Probe::new(std::io::BufReader::new(file))
-        .options(ParseOptions::new().read_cover_art(false));
+    let probe = Probe::new(std::io::BufReader::new(file)).options(ParseOptions::new());
     let probe = probe.guess_file_type().map_err(TagError::Io)?;
     let file = probe.read().map_err(|e| TagError::Parse(e.to_string()))?;
 
@@ -96,9 +98,17 @@ pub fn read(path: &Path) -> Result<FileTags, TagError> {
         }
     }
 
+    let pictures = || tags.iter().flat_map(|t| t.pictures());
+    let cover = pictures()
+        .find(|p| p.pic_type() == PictureType::CoverFront)
+        .or_else(|| pictures().next())
+        .map(|p| p.data().to_vec())
+        .filter(|d| !d.is_empty());
+
     Ok(FileTags {
         tags: merge(&tags),
         properties,
+        cover,
     })
 }
 
@@ -292,6 +302,24 @@ mod tests {
         assert_eq!(p.sample_rate, Some(44_100));
         assert_eq!(p.channels, Some(2));
         assert!((990..=1010).contains(&p.duration_ms), "{}", p.duration_ms);
+    }
+
+    #[test]
+    fn embedded_front_cover_wins_over_other_pictures() {
+        use lofty::picture::{MimeType, Picture};
+        let dir = TempDir::new("cover");
+        let path = tagged_wav(&dir, |t| {
+            t.set_title("x".into());
+            for (kind, byte) in [(PictureType::CoverBack, 1u8), (PictureType::CoverFront, 2)] {
+                t.push_picture(
+                    Picture::unchecked(vec![byte; 16])
+                        .pic_type(kind)
+                        .mime_type(MimeType::Png)
+                        .build(),
+                );
+            }
+        });
+        assert_eq!(read(&path).unwrap().cover, Some(vec![2u8; 16]));
     }
 
     #[test]
