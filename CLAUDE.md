@@ -24,7 +24,9 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (
 - Flutter: `audio_service` + `audio_session` pro Android (foreground service, notifikace, lock screen,
   audio focus). Windows SMTC je v Rustu (crate `windows`, modul `dap_api::media_controls`).
 - Databáze: SQLite ve WAL režimu, jedno zapisující vlákno, více čtecích spojení.
-- Android: přístup ke složkám přes `READ_MEDIA_AUDIO` a běžné cesty, ne SAF.
+- Android: přístup ke složkám přes `READ_MEDIA_AUDIO` a běžné cesty, ne SAF. `MainActivity` musí
+  před startem Flutteru zavolat `initNative` (předá JavaVM a kontext do ndk-context pro cpal).
+- Složky knihovny se nesmí překrývat (`dap_library::roots`).
 - Opus se v MVP nepodporuje (symphonia ho nemá); doplní se později přes libopus.
 - App ID `cz.daveprokop.daveaudioplayer`, minimální Android 8.0 (API 26).
 - Bridge: flutter_rust_bridge 2.13; crate `api` se jmenuje `dap_api` (cargokit odvozuje název knihovny
@@ -77,6 +79,7 @@ nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci), sl
 (notify, debounce 3 s, sken jen dotčených kořenů + sken při startu), UI podle
 `design/mockups.html` (tmavé, akcent z obalu; PC: navigace + obsah + fronta, mobil: spodní
 navigace + mini přehrávač; knihovna, alba, interpreti, detail, právě hraje, fronta, EQ, nastavení).
-Zbývá do MVP: ověření na Android zařízení (přehrávání se zhasnutým displejem, sledování složek
-na sdíleném úložišti). Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,
+Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
+přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
+Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,
 vlastní presety EQ.
