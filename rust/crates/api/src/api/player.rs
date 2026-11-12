@@ -120,9 +120,33 @@ pub fn seek(position_ms: i64) -> Result<()> {
     })
 }
 
-/// Linear volume 0.0–1.0.
+/// Linear volume 0.0–1.0 (stored).
 pub fn set_volume(volume: f64) -> Result<()> {
     send(Command::SetVolume(volume as f32))
+}
+
+/// Lowers the output while another app speaks (audio focus ducking); not stored.
+pub fn duck(enabled: bool) -> Result<()> {
+    send(Command::Duck(enabled))
+}
+
+/// Stores a UI preference (read back with `ui_setting`).
+pub fn set_ui_setting(key: String, value: String) -> Result<()> {
+    send(Command::SetUiSetting { key, value })
+}
+
+/// Frequency response of EQ settings in dB at `freqs_hz` (for drawing the curve).
+#[frb(sync)]
+pub fn eq_response_db(gains_db: Vec<f64>, preamp_db: f64, freqs_hz: Vec<f64>) -> Vec<f64> {
+    let mut eq = dap_dsp::Equalizer::new(48_000.0, 2);
+    let mut gains = [0.0f32; BAND_COUNT];
+    for (dst, src) in gains.iter_mut().zip(&gains_db) {
+        *dst = *src as f32;
+    }
+    eq.set_gains_db(&gains);
+    eq.set_preamp_db(preamp_db as f32);
+    eq.set_enabled(true);
+    freqs_hz.iter().map(|&f| eq.response_db(f)).collect()
 }
 
 /// Ten band gains in dB (31 Hz … 16 kHz), each clamped to ±12 dB.
@@ -276,6 +300,10 @@ pub struct ScanSummaryDto {
 pub struct PlayerSettingsDto {
     pub crossfade_ms: u32,
     pub normalize: bool,
+    pub volume: f64,
+    pub eq_enabled: bool,
+    pub eq_gains_db: Vec<f64>,
+    pub eq_preamp_db: f64,
 }
 
 pub enum AppEventKind {
@@ -353,6 +381,10 @@ fn to_dto(event: Event) -> AppEvent {
             settings: Some(PlayerSettingsDto {
                 crossfade_ms: s.crossfade_ms,
                 normalize: s.normalize,
+                volume: f64::from(s.volume),
+                eq_enabled: s.eq_enabled,
+                eq_gains_db: s.eq_gains_db.iter().map(|&g| f64::from(g)).collect(),
+                eq_preamp_db: f64::from(s.eq_preamp_db),
             }),
             ..AppEvent::new(AppEventKind::Settings)
         },

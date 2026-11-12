@@ -7,7 +7,8 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `close_reader`, `current_covers_dir`, `query_track`, `row_to_track`, `with_reader`
+// These functions are ignored because they are not marked as `pub`: `close_reader`, `covers_for`, `current_covers_dir`, `query_albums`, `query_track`, `query_tracks`, `row_to_track`, `with_reader`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Covers`
 
 /// Number of playable tracks.
 Future<int> trackCount() => RustLib.instance.api.crateApiLibraryTrackCount();
@@ -28,15 +29,244 @@ Future<List<TrackInfo>> search({required String query, required int limit}) =>
 Future<List<TrackInfo>> tracksByIds({required Int64List ids}) =>
     RustLib.instance.api.crateApiLibraryTracksByIds(ids: ids);
 
+/// Albums with at least one playable track, by album artist and year.
+Future<List<AlbumInfo>> albums() =>
+    RustLib.instance.api.crateApiLibraryAlbums();
+
+Future<AlbumInfo?> album({required PlatformInt64 albumId}) =>
+    RustLib.instance.api.crateApiLibraryAlbum(albumId: albumId);
+
+/// An album's tracks in disc and track order.
+Future<List<TrackInfo>> albumTracks({required PlatformInt64 albumId}) =>
+    RustLib.instance.api.crateApiLibraryAlbumTracks(albumId: albumId);
+
+/// Artists credited on playable tracks, by sort name.
+Future<List<ArtistInfo>> artists() =>
+    RustLib.instance.api.crateApiLibraryArtists();
+
+/// Albums of an artist: as album artist, or with tracks by them.
+Future<List<AlbumInfo>> artistAlbums({required PlatformInt64 artistId}) =>
+    RustLib.instance.api.crateApiLibraryArtistAlbums(artistId: artistId);
+
+/// All playable tracks by an artist, in library order.
+Future<List<TrackInfo>> artistTracks({required PlatformInt64 artistId}) =>
+    RustLib.instance.api.crateApiLibraryArtistTracks(artistId: artistId);
+
 /// Registered music folders.
-Future<List<String>> libraryFolders() =>
+Future<List<FolderInfo>> libraryFolders() =>
     RustLib.instance.api.crateApiLibraryLibraryFolders();
+
+Future<LibraryStats> libraryStats() =>
+    RustLib.instance.api.crateApiLibraryLibraryStats();
+
+Future<TrackDetails?> trackDetails({required PlatformInt64 trackId}) =>
+    RustLib.instance.api.crateApiLibraryTrackDetails(trackId: trackId);
+
+/// A UI preference stored with [`super::player::set_ui_setting`].
+Future<String?> uiSetting({required String key}) =>
+    RustLib.instance.api.crateApiLibraryUiSetting(key: key);
+
+class AlbumInfo {
+  final PlatformInt64 id;
+  final String title;
+  final String artist;
+  final int? year;
+  final int trackCount;
+  final PlatformInt64 durationMs;
+  final String? coverSmall;
+  final String? coverMedium;
+  final String? coverLarge;
+
+  const AlbumInfo({
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.year,
+    required this.trackCount,
+    required this.durationMs,
+    this.coverSmall,
+    this.coverMedium,
+    this.coverLarge,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      year.hashCode ^
+      trackCount.hashCode ^
+      durationMs.hashCode ^
+      coverSmall.hashCode ^
+      coverMedium.hashCode ^
+      coverLarge.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AlbumInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          artist == other.artist &&
+          year == other.year &&
+          trackCount == other.trackCount &&
+          durationMs == other.durationMs &&
+          coverSmall == other.coverSmall &&
+          coverMedium == other.coverMedium &&
+          coverLarge == other.coverLarge;
+}
+
+class ArtistInfo {
+  final PlatformInt64 id;
+  final String name;
+  final int albumCount;
+  final int trackCount;
+
+  /// A cover from one of the artist's albums.
+  final String? coverMedium;
+
+  const ArtistInfo({
+    required this.id,
+    required this.name,
+    required this.albumCount,
+    required this.trackCount,
+    this.coverMedium,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      albumCount.hashCode ^
+      trackCount.hashCode ^
+      coverMedium.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ArtistInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          albumCount == other.albumCount &&
+          trackCount == other.trackCount &&
+          coverMedium == other.coverMedium;
+}
+
+class FolderInfo {
+  final PlatformInt64 id;
+  final String path;
+  final int trackCount;
+
+  /// False when the folder cannot be reached (unplugged drive, removed SD card).
+  final bool available;
+
+  const FolderInfo({
+    required this.id,
+    required this.path,
+    required this.trackCount,
+    required this.available,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ path.hashCode ^ trackCount.hashCode ^ available.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FolderInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          path == other.path &&
+          trackCount == other.trackCount &&
+          available == other.available;
+}
+
+class LibraryStats {
+  final int tracks;
+  final int albums;
+  final int artists;
+  final PlatformInt64 totalMs;
+
+  /// Tracks whose loudness has not been measured yet.
+  final int pendingAnalysis;
+
+  const LibraryStats({
+    required this.tracks,
+    required this.albums,
+    required this.artists,
+    required this.totalMs,
+    required this.pendingAnalysis,
+  });
+
+  @override
+  int get hashCode =>
+      tracks.hashCode ^
+      albums.hashCode ^
+      artists.hashCode ^
+      totalMs.hashCode ^
+      pendingAnalysis.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryStats &&
+          runtimeType == other.runtimeType &&
+          tracks == other.tracks &&
+          albums == other.albums &&
+          artists == other.artists &&
+          totalMs == other.totalMs &&
+          pendingAnalysis == other.pendingAnalysis;
+}
+
+/// Technical details of one track (now playing view).
+class TrackDetails {
+  final String format;
+  final int? sampleRate;
+  final int? bitDepth;
+  final int? bitrateKbps;
+  final int? year;
+  final double? loudnessLufs;
+
+  const TrackDetails({
+    required this.format,
+    this.sampleRate,
+    this.bitDepth,
+    this.bitrateKbps,
+    this.year,
+    this.loudnessLufs,
+  });
+
+  @override
+  int get hashCode =>
+      format.hashCode ^
+      sampleRate.hashCode ^
+      bitDepth.hashCode ^
+      bitrateKbps.hashCode ^
+      year.hashCode ^
+      loudnessLufs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrackDetails &&
+          runtimeType == other.runtimeType &&
+          format == other.format &&
+          sampleRate == other.sampleRate &&
+          bitDepth == other.bitDepth &&
+          bitrateKbps == other.bitrateKbps &&
+          year == other.year &&
+          loudnessLufs == other.loudnessLufs;
+}
 
 class TrackInfo {
   final PlatformInt64 id;
   final String title;
   final String artist;
   final String album;
+  final PlatformInt64? albumId;
   final int? trackNo;
   final PlatformInt64? durationMs;
   final bool missing;
@@ -51,6 +281,7 @@ class TrackInfo {
     required this.title,
     required this.artist,
     required this.album,
+    this.albumId,
     this.trackNo,
     this.durationMs,
     required this.missing,
@@ -65,6 +296,7 @@ class TrackInfo {
       title.hashCode ^
       artist.hashCode ^
       album.hashCode ^
+      albumId.hashCode ^
       trackNo.hashCode ^
       durationMs.hashCode ^
       missing.hashCode ^
@@ -81,6 +313,7 @@ class TrackInfo {
           title == other.title &&
           artist == other.artist &&
           album == other.album &&
+          albumId == other.albumId &&
           trackNo == other.trackNo &&
           durationMs == other.durationMs &&
           missing == other.missing &&

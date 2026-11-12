@@ -32,9 +32,28 @@ Future<void> previous() => RustLib.instance.api.crateApiPlayerPrevious();
 Future<void> seek({required PlatformInt64 positionMs}) =>
     RustLib.instance.api.crateApiPlayerSeek(positionMs: positionMs);
 
-/// Linear volume 0.0–1.0.
+/// Linear volume 0.0–1.0 (stored).
 Future<void> setVolume({required double volume}) =>
     RustLib.instance.api.crateApiPlayerSetVolume(volume: volume);
+
+/// Lowers the output while another app speaks (audio focus ducking); not stored.
+Future<void> duck({required bool enabled}) =>
+    RustLib.instance.api.crateApiPlayerDuck(enabled: enabled);
+
+/// Stores a UI preference (read back with `ui_setting`).
+Future<void> setUiSetting({required String key, required String value}) =>
+    RustLib.instance.api.crateApiPlayerSetUiSetting(key: key, value: value);
+
+/// Frequency response of EQ settings in dB at `freqs_hz` (for drawing the curve).
+Float64List eqResponseDb({
+  required List<double> gainsDb,
+  required double preampDb,
+  required List<double> freqsHz,
+}) => RustLib.instance.api.crateApiPlayerEqResponseDb(
+  gainsDb: gainsDb,
+  preampDb: preampDb,
+  freqsHz: freqsHz,
+);
 
 /// Ten band gains in dB (31 Hz … 16 kHz), each clamped to ±12 dB.
 Future<void> setEq({required List<double> gainsDb, required double preampDb}) =>
@@ -154,11 +173,28 @@ enum PlayStatus { stopped, playing, paused }
 class PlayerSettingsDto {
   final int crossfadeMs;
   final bool normalize;
+  final double volume;
+  final bool eqEnabled;
+  final Float64List eqGainsDb;
+  final double eqPreampDb;
 
-  const PlayerSettingsDto({required this.crossfadeMs, required this.normalize});
+  const PlayerSettingsDto({
+    required this.crossfadeMs,
+    required this.normalize,
+    required this.volume,
+    required this.eqEnabled,
+    required this.eqGainsDb,
+    required this.eqPreampDb,
+  });
 
   @override
-  int get hashCode => crossfadeMs.hashCode ^ normalize.hashCode;
+  int get hashCode =>
+      crossfadeMs.hashCode ^
+      normalize.hashCode ^
+      volume.hashCode ^
+      eqEnabled.hashCode ^
+      eqGainsDb.hashCode ^
+      eqPreampDb.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -166,7 +202,11 @@ class PlayerSettingsDto {
       other is PlayerSettingsDto &&
           runtimeType == other.runtimeType &&
           crossfadeMs == other.crossfadeMs &&
-          normalize == other.normalize;
+          normalize == other.normalize &&
+          volume == other.volume &&
+          eqEnabled == other.eqEnabled &&
+          eqGainsDb == other.eqGainsDb &&
+          eqPreampDb == other.eqPreampDb;
 }
 
 /// Player state at a point in time. The UI computes the live position as

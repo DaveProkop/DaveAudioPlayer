@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use dap_analysis::normalization_gain_db;
 use dap_dsp::gain::db_to_gain;
-use dap_dsp::eq::BAND_COUNT;
+use dap_dsp::eq::{BAND_COUNT, MAX_GAIN_DB};
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
 use dap_library::{DbError, ScanJob, ScanReport, add_root};
@@ -40,6 +40,12 @@ const SETTING_CURRENT: &str = "player.current_queue_item";
 const SETTING_POSITION: &str = "player.position_ms";
 const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
+const SETTING_VOLUME: &str = "player.volume";
+const SETTING_EQ_ENABLED: &str = "eq.enabled";
+const SETTING_EQ_GAINS: &str = "eq.gains_db";
+const SETTING_EQ_PREAMP: &str = "eq.preamp_db";
+/// Output level while another app speaks (navigation, notification).
+const DUCK_GAIN: f32 = 0.3;
 
 pub const DEFAULT_CROSSFADE_MS: u32 = 6000;
 pub const MAX_CROSSFADE_MS: u32 = 12_000;
@@ -76,7 +82,10 @@ pub enum Command {
     },
     RemoveQueueItem(usize),
     ClearQueue,
+    /// Linear volume 0.0–1.0 (stored).
     SetVolume(f32),
+    /// Temporarily lowers the output (audio focus ducking); not stored.
+    Duck(bool),
     SetEq {
         gains_db: [f32; BAND_COUNT],
         preamp_db: f32,
@@ -88,6 +97,11 @@ pub enum Command {
     },
     /// Volume normalization to a common loudness (EBU R128).
     SetNormalization(bool),
+    /// Stores a free-form UI preference (key without prefix; saved as `ui.<key>`).
+    SetUiSetting {
+        key: String,
+        value: String,
+    },
     /// Registers a music folder and rescans the library.
     AddFolder(PathBuf),
     /// Rescans every registered folder.
@@ -117,10 +131,15 @@ pub struct PlayerState {
 }
 
 /// Playback preferences, stored in the database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayerSettings {
     pub crossfade_ms: u32,
     pub normalize: bool,
+    /// Linear 0.0–1.0.
+    pub volume: f32,
+    pub eq_enabled: bool,
+    pub eq_gains_db: [f32; BAND_COUNT],
+    pub eq_preamp_db: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -290,6 +309,7 @@ struct Control {
     /// Where scans store cover images.
     covers: PathBuf,
     settings: PlayerSettings,
+    ducked: bool,
     /// The transition plan last sent to the mixer.
     plan_sent: Option<TransitionPlan>,
 }
@@ -362,6 +382,18 @@ impl Control {
             crossfade_ms: read_setting(&reader, SETTING_CROSSFADE)
                 .map_or(DEFAULT_CROSSFADE_MS, |v| v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32),
             normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
+            volume: read_setting_str(&reader, SETTING_VOLUME)
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| v.is_finite())
+                .map_or(1.0, |v| v.clamp(0.0, 1.0)),
+            eq_enabled: read_setting(&reader, SETTING_EQ_ENABLED).is_some_and(|v| v != 0),
+            eq_gains_db: read_setting_str(&reader, SETTING_EQ_GAINS)
+                .map(|v| parse_gains(&v))
+                .unwrap_or_default(),
+            eq_preamp_db: read_setting_str(&reader, SETTING_EQ_PREAMP)
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| v.is_finite())
+                .map_or(0.0, |v| v.clamp(-MAX_GAIN_DB, MAX_GAIN_DB)),
         };
         // Without analysis playback still works, just without measured loudness.
         let analyzer = match Analyzer::start(&config.db_path, db.clone()) {
@@ -394,9 +426,18 @@ impl Control {
             watcher: None,
             covers: dap_library::covers::covers_dir(&config.db_path),
             settings,
+            ducked: false,
             plan_sent: None,
         };
         let mut control = control;
+        // The mixer starts at defaults; bring it to the stored settings.
+        let s = control.settings;
+        control.send_mixer(MixerCommand::SetVolume(s.volume));
+        control.send_mixer(MixerCommand::SetEq {
+            gains_db: s.eq_gains_db,
+            preamp_db: s.eq_preamp_db,
+        });
+        control.send_mixer(MixerCommand::SetEqEnabled(s.eq_enabled));
         control.emit(Event::Settings(control.settings));
         control.emit(Event::Queue(control.queue.entries()));
         control.emit_state();
@@ -743,6 +784,11 @@ impl Control {
         }
     }
 
+    fn apply_volume(&mut self) {
+        let v = self.settings.volume * if self.ducked { DUCK_GAIN } else { 1.0 };
+        self.send_mixer(MixerCommand::SetVolume(v));
+    }
+
     fn save_setting(&self, key: &'static str, value: String) {
         self.db.run(move |c| {
             let _ = c.execute(
@@ -910,15 +956,57 @@ impl Control {
                 self.queue.clear(&self.db);
                 self.queue_changed();
             }
-            Command::SetVolume(v) => self.send_mixer(MixerCommand::SetVolume(v)),
+            Command::SetVolume(v) => {
+                let v = if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 };
+                self.settings.volume = v;
+                self.apply_volume();
+                self.save_setting(SETTING_VOLUME, v.to_string());
+                self.emit(Event::Settings(self.settings));
+            }
+            Command::Duck(on) => {
+                self.ducked = on;
+                self.apply_volume();
+            }
             Command::SetEq {
                 gains_db,
                 preamp_db,
-            } => self.send_mixer(MixerCommand::SetEq {
-                gains_db,
-                preamp_db,
-            }),
-            Command::SetEqEnabled(on) => self.send_mixer(MixerCommand::SetEqEnabled(on)),
+            } => {
+                let clamp = |g: f32| {
+                    if g.is_finite() {
+                        g.clamp(-MAX_GAIN_DB, MAX_GAIN_DB)
+                    } else {
+                        0.0
+                    }
+                };
+                let gains_db = gains_db.map(clamp);
+                let preamp_db = clamp(preamp_db);
+                self.settings.eq_gains_db = gains_db;
+                self.settings.eq_preamp_db = preamp_db;
+                self.send_mixer(MixerCommand::SetEq {
+                    gains_db,
+                    preamp_db,
+                });
+                let list: Vec<String> = gains_db.iter().map(|g| g.to_string()).collect();
+                self.save_setting(SETTING_EQ_GAINS, list.join(","));
+                self.save_setting(SETTING_EQ_PREAMP, preamp_db.to_string());
+                self.emit(Event::Settings(self.settings));
+            }
+            Command::SetEqEnabled(on) => {
+                self.settings.eq_enabled = on;
+                self.send_mixer(MixerCommand::SetEqEnabled(on));
+                self.save_setting(SETTING_EQ_ENABLED, i64::from(on).to_string());
+                self.emit(Event::Settings(self.settings));
+            }
+            Command::SetUiSetting { key, value } => {
+                let key = format!("ui.{key}");
+                self.db.run(move |c| {
+                    let _ = c.execute(
+                        "INSERT INTO setting (key, value) VALUES (?1, ?2)
+                         ON CONFLICT (key) DO UPDATE SET value = ?2",
+                        params![key, value],
+                    );
+                });
+            }
             Command::SetCrossfade { ms } => self.set_crossfade(ms),
             Command::SetNormalization(on) => self.set_normalization(on),
             Command::AddFolder(path) => {
@@ -1101,14 +1189,30 @@ impl Control {
     }
 }
 
-fn read_setting(conn: &Connection, key: &str) -> Option<i64> {
+fn read_setting_str(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row("SELECT value FROM setting WHERE key = ?1", [key], |r| {
         r.get::<_, String>(0)
     })
     .optional()
     .ok()
     .flatten()
-    .and_then(|v| v.trim().parse().ok())
+}
+
+fn read_setting(conn: &Connection, key: &str) -> Option<i64> {
+    read_setting_str(conn, key).and_then(|v| v.trim().parse().ok())
+}
+
+/// Stored EQ gains ("1.5,0,-2,…"); missing or bad values count as 0 dB.
+fn parse_gains(v: &str) -> [f32; BAND_COUNT] {
+    let mut gains = [0.0; BAND_COUNT];
+    for (g, part) in gains.iter_mut().zip(v.split(',')) {
+        if let Ok(x) = part.trim().parse::<f32>()
+            && x.is_finite()
+        {
+            *g = x.clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
+        }
+    }
+    gains
 }
 
 fn scan_roots(

@@ -1,4 +1,4 @@
-import 'package:daveaudioplayer/main.dart';
+import 'package:daveaudioplayer/ui/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

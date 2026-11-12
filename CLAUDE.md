@@ -1,7 +1,7 @@
 # DaveAudioPlayer
 
 Hudební přehrávač pro **Windows (PC)** a **Android**. Přehrává hudbu z lokálních složek,
-které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a ověřovací Flutter UI (`app/`).
+které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (`app/`).
 
 ## Komunikace
 - S uživatelem mluv česky, stručně a věcně.
@@ -42,6 +42,8 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a ověřovací
 ## Vývoj (příkazy)
 - Rust: `cd rust && cargo test --workspace && cargo clippy --workspace --all-targets`
 - Flutter: `cd app && flutter run -d windows`, `flutter test`, `flutter test integration_test -d windows`
+- Screenshoty UI na vygenerované knihovně: `flutter test integration_test/ui_screens_test.dart -d windows`
+  (PNG do složky v proměnné `DAP_SHOTS`, jinak `%TEMP%\dap_shots`)
 - Po změně `rust/crates/api/src/api/*`: `cd app && flutter_rust_bridge_codegen generate`
 - Windows vyžaduje zapnutý Režim vývojáře (Flutter pluginy používají symlinky).
 - Konzolové nástroje: `cargo run -p dap-engine --example player -- <db> <složka>`,
@@ -72,6 +74,9 @@ do Flutteru ověřený integračním testem na Windows, ověřovací UI, ovlád�
 v Rustu ověřené testem, Android `audio_service`), crossfade s vyrovnáním hlasitosti
 (EBU R128, −18 LUFS, analýza na pozadí; navazující skladby alba gapless), obaly alb (z tagů
 nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci), sledování složek
-(notify, debounce 3 s, sken jen dotčených kořenů + sken při startu).
+(notify, debounce 3 s, sken jen dotčených kořenů + sken při startu), UI podle
+`design/mockups.html` (tmavé, akcent z obalu; PC: navigace + obsah + fronta, mobil: spodní
+navigace + mini přehrávač; knihovna, alba, interpreti, detail, právě hraje, fronta, EQ, nastavení).
 Zbývá do MVP: ověření na Android zařízení (přehrávání se zhasnutým displejem, sledování složek
-na sdíleném úložišti), návrh UI.
+na sdíleném úložišti). Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,
+vlastní presety EQ.

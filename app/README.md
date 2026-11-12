@@ -18,6 +18,7 @@ flutter run -d windows                      # run the app
 flutter build apk --debug                   # Android build
 flutter test                                # Dart unit tests
 flutter test integration_test -d windows    # Rust core through the bridge, end to end
+flutter test integration_test/ui_screens_test.dart -d windows  # PNG of every screen (DAP_SHOTS)
 flutter_rust_bridge_codegen generate        # after changing rust/crates/api/src/api/*
 ```
 

@@ -32,13 +32,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AlbumInfo dco_decode_album_info(dynamic raw);
+
+  @protected
   AppEvent dco_decode_app_event(dynamic raw);
 
   @protected
   AppEventKind dco_decode_app_event_kind(dynamic raw);
 
   @protected
+  ArtistInfo dco_decode_artist_info(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  AlbumInfo dco_decode_box_autoadd_album_info(dynamic raw);
+
+  @protected
+  double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
@@ -53,10 +68,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScanSummaryDto dco_decode_box_autoadd_scan_summary_dto(dynamic raw);
 
   @protected
+  TrackDetails dco_decode_box_autoadd_track_details(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  FolderInfo dco_decode_folder_info(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -65,7 +86,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
-  List<String> dco_decode_list_String(dynamic raw);
+  LibraryStats dco_decode_library_stats(dynamic raw);
+
+  @protected
+  List<AlbumInfo> dco_decode_list_album_info(dynamic raw);
+
+  @protected
+  List<ArtistInfo> dco_decode_list_artist_info(dynamic raw);
+
+  @protected
+  List<FolderInfo> dco_decode_list_folder_info(dynamic raw);
 
   @protected
   List<double> dco_decode_list_prim_f_64_loose(dynamic raw);
@@ -89,6 +119,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  AlbumInfo? dco_decode_opt_box_autoadd_album_info(dynamic raw);
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
@@ -101,6 +140,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanSummaryDto? dco_decode_opt_box_autoadd_scan_summary_dto(dynamic raw);
+
+  @protected
+  TrackDetails? dco_decode_opt_box_autoadd_track_details(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -122,6 +164,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanSummaryDto dco_decode_scan_summary_dto(dynamic raw);
+
+  @protected
+  TrackDetails dco_decode_track_details(dynamic raw);
 
   @protected
   TrackInfo dco_decode_track_info(dynamic raw);
@@ -147,13 +192,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AlbumInfo sse_decode_album_info(SseDeserializer deserializer);
+
+  @protected
   AppEvent sse_decode_app_event(SseDeserializer deserializer);
 
   @protected
   AppEventKind sse_decode_app_event_kind(SseDeserializer deserializer);
 
   @protected
+  ArtistInfo sse_decode_artist_info(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  AlbumInfo sse_decode_box_autoadd_album_info(SseDeserializer deserializer);
+
+  @protected
+  double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
@@ -174,10 +234,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TrackDetails sse_decode_box_autoadd_track_details(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  FolderInfo sse_decode_folder_info(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -186,7 +254,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
-  List<String> sse_decode_list_String(SseDeserializer deserializer);
+  LibraryStats sse_decode_library_stats(SseDeserializer deserializer);
+
+  @protected
+  List<AlbumInfo> sse_decode_list_album_info(SseDeserializer deserializer);
+
+  @protected
+  List<ArtistInfo> sse_decode_list_artist_info(SseDeserializer deserializer);
+
+  @protected
+  List<FolderInfo> sse_decode_list_folder_info(SseDeserializer deserializer);
 
   @protected
   List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer);
@@ -212,6 +289,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  AlbumInfo? sse_decode_opt_box_autoadd_album_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
@@ -226,6 +314,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanSummaryDto? sse_decode_opt_box_autoadd_scan_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TrackDetails? sse_decode_opt_box_autoadd_track_details(
     SseDeserializer deserializer,
   );
 
@@ -255,6 +348,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScanSummaryDto sse_decode_scan_summary_dto(SseDeserializer deserializer);
 
   @protected
+  TrackDetails sse_decode_track_details(SseDeserializer deserializer);
+
+  @protected
   TrackInfo sse_decode_track_info(SseDeserializer deserializer);
 
   @protected
@@ -282,13 +378,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_album_info(AlbumInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_app_event(AppEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_app_event_kind(AppEventKind self, SseSerializer serializer);
 
   @protected
+  void sse_encode_artist_info(ArtistInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_album_info(
+    AlbumInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_i_64(
@@ -315,10 +429,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_track_details(
+    TrackDetails self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_folder_info(FolderInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -327,7 +450,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+  void sse_encode_library_stats(LibraryStats self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_album_info(
+    List<AlbumInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_artist_info(
+    List<ArtistInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_folder_info(
+    List<FolderInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_f_64_loose(
@@ -369,6 +510,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_album_info(
+    AlbumInfo? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
     SseSerializer serializer,
@@ -389,6 +542,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_scan_summary_dto(
     ScanSummaryDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_track_details(
+    TrackDetails? self,
     SseSerializer serializer,
   );
 
@@ -424,6 +583,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ScanSummaryDto self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_track_details(TrackDetails self, SseSerializer serializer);
 
   @protected
   void sse_encode_track_info(TrackInfo self, SseSerializer serializer);

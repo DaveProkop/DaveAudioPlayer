@@ -13,10 +13,11 @@ import 'src/rust/api/player.dart' as rust show setVolume;
 class PlayerController extends ChangeNotifier {
   PlayerStateDto? state;
 
-  /// Crossfade and normalization as stored by the engine (sent on start and on change).
+  /// Playback preferences as stored by the engine (sent on start and on every change).
   PlayerSettingsDto? settings;
   List<QueueItemDto> queue = const [];
   final Map<int, TrackInfo> _tracks = {};
+  final Map<int, TrackDetails?> _details = {};
 
   bool scanning = false;
   String? scanFolder;
@@ -47,24 +48,13 @@ class PlayerController extends ChangeNotifier {
 
   bool get isPlaying => state?.status == PlayStatus.playing;
 
-  /// User volume 0–1; ducking (another app speaking) lowers the output temporarily.
-  double volume = 1.0;
-  bool _ducked = false;
+  /// User volume 0–1 as stored by the engine.
+  double get volume => settings?.volume ?? 1.0;
 
-  Future<void> setVolume(double v) async {
-    volume = v;
-    notifyListeners();
-    await _applyVolume();
-  }
+  Future<void> setVolume(double v) => rust.setVolume(volume: v);
 
-  Future<void> setDucked(bool ducked) async {
-    if (_ducked == ducked) return;
-    _ducked = ducked;
-    await _applyVolume();
-  }
-
-  Future<void> _applyVolume() =>
-      rust.setVolume(volume: _ducked ? volume * 0.3 : volume);
+  /// Another app speaks (navigation, notification): the engine lowers the output.
+  Future<void> setDucked(bool ducked) => duck(enabled: ducked);
 
   int? get currentIndex => state?.index;
 
@@ -74,6 +64,32 @@ class PlayerController extends ChangeNotifier {
   }
 
   TrackInfo? track(int trackId) => _tracks[trackId];
+
+  /// The queue entry after the current one, if loaded.
+  TrackInfo? get nextTrack {
+    final i = currentIndex;
+    if (i == null || i + 1 >= queue.length) return null;
+    return _tracks[queue[i + 1].trackId];
+  }
+
+  /// Whether `next` follows `prev` on the same album (the engine plays it gapless).
+  static bool continuesAlbum(TrackInfo? prev, TrackInfo? next) {
+    if (prev == null || next == null || prev.albumId == null) return false;
+    final a = prev.trackNo, b = next.trackNo;
+    return prev.albumId == next.albumId && a != null && b != null && b == a + 1;
+  }
+
+  /// Technical details of a track (format, loudness), loaded on demand.
+  TrackDetails? details(int trackId) {
+    if (!_details.containsKey(trackId)) {
+      _details[trackId] = null;
+      trackDetails(trackId: trackId).then((d) {
+        _details[trackId] = d;
+        notifyListeners();
+      }, onError: (_) {});
+    }
+    return _details[trackId];
+  }
 
   /// Live position: last reported position advanced by the time since it was reported.
   int get positionMs {
@@ -97,9 +113,7 @@ class PlayerController extends ChangeNotifier {
         await _loadMissingTracks();
       case AppEventKind.trackFailed:
         final t = e.trackId == null ? null : _tracks[e.trackId!];
-        messages.add(
-          'Přeskočeno: ${t?.title ?? 'skladba'} (${e.message ?? ''})',
-        );
+        messages.add('Přeskočeno: ${t?.title ?? 'skladba'} (${e.message ?? ''})');
       case AppEventKind.error:
         messages.add('Chyba: ${e.message ?? ''}');
       case AppEventKind.scanProgress:
@@ -112,10 +126,7 @@ class PlayerController extends ChangeNotifier {
         libraryVersion++;
         final s = e.scanSummary;
         // Scans on start and on folder changes stay silent unless something changed.
-        final changed =
-            s != null &&
-            (s.cancelled ||
-                s.added + s.updated + s.moved + s.missing + s.failed > 0);
+        final changed = s != null && (s.cancelled || s.added + s.updated + s.moved + s.missing + s.failed > 0);
         if (s != null && changed) {
           messages.add(
             s.cancelled
@@ -129,14 +140,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _loadMissingTracks() async {
-    final missing = queue
-        .map((q) => q.trackId)
-        .where((id) => !_tracks.containsKey(id))
-        .toSet();
+    final missing = queue.map((q) => q.trackId).where((id) => !_tracks.containsKey(id)).toSet();
     if (missing.isEmpty) return;
-    for (final t in await tracksByIds(
-      ids: Int64List.fromList(missing.toList()),
-    )) {
+    for (final t in await tracksByIds(ids: Int64List.fromList(missing.toList()))) {
       _tracks[t.id] = t;
     }
   }
@@ -147,11 +153,37 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  /// Appends a track and starts it when nothing is playing.
-  Future<void> addAndMaybePlay(TrackInfo t) async {
+  Int64List _ids(List<TrackInfo> tracks) => Int64List.fromList([for (final t in tracks) t.id]);
+
+  /// Where "play next" inserts: right after the current item.
+  int get _afterCurrent => currentIndex == null ? queue.length : currentIndex! + 1;
+
+  /// Plays a track now: it goes right after the current one, the queue stays.
+  Future<void> playNow(TrackInfo t) async {
     remember([t]);
-    final index = queue.length;
-    await enqueue(trackIds: Int64List.fromList([t.id]));
-    if (!isPlaying) await playIndex(index: index);
+    final at = _afterCurrent;
+    await enqueue(trackIds: _ids([t]), at: at);
+    await playIndex(index: at);
+  }
+
+  /// Replaces the queue with `tracks` and starts at `start` (album, artist, list).
+  Future<void> playAll(List<TrackInfo> tracks, {int start = 0}) async {
+    if (tracks.isEmpty) return;
+    remember(tracks);
+    await clearQueue();
+    await enqueue(trackIds: _ids(tracks));
+    await playIndex(index: start);
+  }
+
+  Future<void> playNext(List<TrackInfo> tracks) async {
+    remember(tracks);
+    await enqueue(trackIds: _ids(tracks), at: _afterCurrent);
+    messages.add(tracks.length == 1 ? 'Zahraje se jako další' : '${tracks.length} skladeb zahraje jako další');
+  }
+
+  Future<void> addToQueue(List<TrackInfo> tracks) async {
+    remember(tracks);
+    await enqueue(trackIds: _ids(tracks));
+    messages.add(tracks.length == 1 ? 'Přidáno do fronty' : '${tracks.length} skladeb přidáno do fronty');
   }
 }

@@ -572,3 +572,49 @@ fn watched_folders_are_rescanned_on_start_and_on_change() {
     }
     engine.shutdown();
 }
+
+fn first_settings(engine: &Engine) -> dap_engine::PlayerSettings {
+    match wait_for(engine, |e| matches!(e, Event::Settings(_))).last() {
+        Some(Event::Settings(s)) => *s,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn volume_and_equalizer_survive_a_restart_but_ducking_does_not() {
+    let dir = TempDir::new("settings");
+    let engine = start_with(&dir, None);
+    let defaults = first_settings(&engine);
+    assert_eq!((defaults.volume, defaults.eq_enabled), (1.0, false));
+
+    let mut gains = [0.0f32; 10];
+    gains[0] = 6.0;
+    gains[9] = -20.0; // clamped to -12
+    engine.send(Command::SetVolume(0.4));
+    engine.send(Command::Duck(true));
+    engine.send(Command::SetEq {
+        gains_db: gains,
+        preamp_db: -3.0,
+    });
+    engine.send(Command::SetEqEnabled(true));
+    engine.send(Command::SetUiSetting {
+        key: "theme".into(),
+        value: "light".into(),
+    });
+    wait_for(&engine, |e| matches!(e, Event::Settings(s) if s.eq_enabled));
+    engine.shutdown();
+
+    let engine = start_with(&dir, None);
+    let s = first_settings(&engine);
+    engine.shutdown();
+    assert_eq!(s.volume, 0.4, "the user volume, not the ducked one");
+    assert!(s.eq_enabled);
+    assert_eq!(s.eq_gains_db[0], 6.0);
+    assert_eq!(s.eq_gains_db[9], -12.0);
+    assert_eq!(s.eq_preamp_db, -3.0);
+    let conn = open_writer(&dir.db()).unwrap();
+    let theme: String = conn
+        .query_row("SELECT value FROM setting WHERE key = 'ui.theme'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(theme, "light");
+}
