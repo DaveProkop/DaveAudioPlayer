@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DaveAudioPlayer – mockupy UI</title>
+<style>
+  :root {
+    /* Base palette (dark). The accent is taken from the current track's cover. */
+    --bg: #0e1014;
+    --surface: #161920;
+    --surface-2: #1d2129;
+    --surface-3: #262b35;
+    --line: #2a2f3a;
+    --text: #e9ebef;
+    --muted: #9aa1ad;
+    --faint: #6b7280;
+    --accent: #f0a04b;        /* from the cover of "Letní noc" */
+    --accent-soft: rgba(240, 160, 75, .16);
+    --accent-text: #1a1206;
+    --radius: 10px;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #07080a; color: var(--text); font-size: 14px; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  /* ----- page chrome (not part of the app) ----- */
+  .page { max-width: 1340px; margin: 0 auto; padding: 24px 16px 64px; }
+  .page h1 { font-size: 20px; margin: 0 0 4px; }
+  .page p.lead { color: var(--muted); margin: 0 0 20px; max-width: 900px; line-height: 1.5; }
+  .switch { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .switch button { padding: 7px 14px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+  .switch button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .note { color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 980px; margin: 14px 0 0; }
+  .note b { color: var(--text); }
+
+  /* ----- covers (CSS art stand-ins) ----- */
+  .cv { border-radius: 6px; flex: none; background: var(--c); position: relative; overflow: hidden; }
+  .cv::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.25), transparent 55%); }
+  .c1 { --c: linear-gradient(135deg, #f7b267, #f25c54 60%, #5b2a86); }
+  .c2 { --c: linear-gradient(160deg, #1b998b, #2d3047 70%); }
+  .c3 { --c: linear-gradient(120deg, #5f0f40, #9a031e 50%, #fb8b24); }
+  .c4 { --c: linear-gradient(200deg, #3a86ff, #8338ec 60%, #0b132b); }
+  .c5 { --c: linear-gradient(140deg, #e9c46a, #2a9d8f 70%); }
+  .c6 { --c: linear-gradient(180deg, #d8e2dc, #9d8189 80%); }
+  .c7 { --c: linear-gradient(130deg, #264653, #e76f51); }
+  .c8 { --c: linear-gradient(160deg, #111, #444 60%, #f0a04b); }
+
+  /* ----- desktop frame ----- */
+  .desk {
+    width: 100%; max-width: 1300px; height: 800px; margin: 0 auto;
+    display: grid; grid-template-columns: 216px minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) 84px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  }
+  .nav { grid-row: 1; background: var(--surface); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); }
+  .brand { font-weight: 700; letter-spacing: .2px; padding: 4px 10px 16px; display: flex; align-items: center; gap: 8px; }
+  .brand i { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: inline-block; }
+  .nav .item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--muted); text-align: left; }
+  .nav .item.on { background: var(--surface-3); color: var(--text); }
+  .nav .item .ic { width: 18px; text-align: center; opacity: .9; }
+  .nav .sep { height: 1px; background: var(--line); margin: 10px 6px; }
+  .nav .label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); padding: 6px 10px; }
+  .scan { margin-top: auto; padding: 10px; border-radius: 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+  .bar { height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+
+  .main { grid-row: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+  .top { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .search { flex: 1; min-width: 220px; white-space: nowrap; overflow: hidden; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 999px; padding: 8px 14px; color: var(--muted); max-width: 520px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .top .chips { flex-wrap: nowrap; overflow: hidden; flex: none; max-width: 50%; }
+  .chip { white-space: nowrap; }
+  .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; }
+  .chip.on { background: var(--accent-soft); color: var(--accent); }
+  .content { flex: 1; overflow: auto; padding: 16px 20px 20px; }
+  h2 { font-size: 22px; margin: 4px 0 2px; }
+  .sub { color: var(--muted); margin-bottom: 14px; }
+
+  table.tracks { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .tracks col.c-num { width: 40px; } .tracks col.c-len { width: 64px; }
+  .tracks col.c-title { width: 40%; } .tracks col.c-art, .tracks col.c-alb { width: 25%; }
+  .tracks th { text-align: left; font-weight: 500; color: var(--faint); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .tracks td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.03); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+  .tracks tr:hover td { background: var(--surface); }
+  .tracks tr.playing td { color: var(--accent); }
+  .tracks .t { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .tracks .t span { overflow: hidden; text-overflow: ellipsis; }
+  .tracks .t .cv { width: 32px; height: 32px; }
+  .num { color: var(--faint); width: 34px; }
+  .dim { color: var(--muted); }
+  .r { text-align: right; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }
+  .album .cv { width: 100%; aspect-ratio: 1; border-radius: 8px; }
+  .album b { display: block; margin-top: 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .album span { color: var(--muted); font-size: 12.5px; }
+
+  .artists { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px; }
+  .artist { text-align: center; }
+  .artist .cv { width: 120px; height: 120px; border-radius: 50%; margin: 0 auto; }
+  .artist b { display: block; margin-top: 8px; }
+  .artist span { color: var(--muted); font-size: 12.5px; }
+
+  .hero { display: flex; gap: 22px; align-items: flex-end; margin-bottom: 18px; }
+  .hero .cv { width: 180px; height: 180px; border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .hero .kind { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .hero h2 { font-size: 32px; margin: 4px 0; }
+  .btn { padding: 9px 18px; border-radius: 999px; background: var(--surface-3); }
+  .btn.primary { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* now playing */
+  .np { flex: 1; display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 32px; padding: 28px; align-items: center;
+        background: radial-gradient(1000px 500px at 20% 10%, rgba(240,160,75,.20), transparent 60%); }
+  .np .cv { width: 100%; aspect-ratio: 1; border-radius: 14px; box-shadow: 0 30px 60px rgba(0,0,0,.55); }
+  .np h2 { font-size: 34px; }
+  .np .meta { color: var(--muted); font-size: 16px; }
+  .facts { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+  .fact { padding: 5px 10px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; }
+  .fact b { color: var(--text); font-weight: 600; }
+  .upnext { margin-top: 22px; padding: 14px; border-radius: var(--radius); background: var(--surface); display: flex; gap: 12px; align-items: center; }
+  .upnext .cv { width: 48px; height: 48px; }
+  .xfade { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 12.5px; margin-top: 6px; }
+  .xfade svg { flex: none; }
+
+  /* queue */
+  .queue { grid-row: 1; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+  .qhead { padding: 16px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; }
+  .qhead b { font-size: 15px; }
+  .qhead span { color: var(--muted); font-size: 12.5px; }
+  .qlist { flex: 1; overflow: auto; padding: 0 8px 12px; }
+  .qsec { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); padding: 10px 8px 6px; }
+  .qi { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+  .qi .cv { width: 38px; height: 38px; }
+  .qi .tx { flex: 1; min-width: 0; }
+  .qi .tx b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi .tx span { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .qi .d { color: var(--faint); font-size: 12.5px; }
+  .qi .h { color: var(--faint); cursor: grab; padding: 0 2px; }
+  .qi.now { background: var(--accent-soft); }
+  .qi.now b { color: var(--accent); }
+  .qi.past { opacity: .45; }
+  .qi.drag { background: var(--surface-3); box-shadow: 0 10px 24px rgba(0,0,0,.45); transform: translateX(-6px) rotate(-.6deg); }
+  .qgap { height: 2px; margin: 0 8px; background: var(--accent); border-radius: 2px; }
+  .tr { display: flex; align-items: center; gap: 6px; padding: 0 0 0 56px; font-size: 11.5px; color: var(--faint); height: 16px; }
+  .tr.album { color: #6fbf9a; }
+
+  /* player bar */
+  .player { grid-column: 1 / -1; grid-row: 2; background: var(--surface-2); border-top: 1px solid var(--line);
+            display: grid; grid-template-columns: 300px 1fr 300px; align-items: center; padding: 0 18px; gap: 18px; }
+  .pinfo { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .pinfo .cv { width: 56px; height: 56px; }
+  .pinfo b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pinfo span { color: var(--muted); font-size: 12.5px; }
+  .pc { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .ctl { display: flex; align-items: center; gap: 18px; }
+  .ctl .play { width: 40px; height: 40px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center; font-size: 16px; }
+  .ctl button { color: var(--muted); font-size: 16px; }
+  .seek { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 620px; font-size: 12px; color: var(--muted); }
+  .track { flex: 1; height: 4px; border-radius: 4px; background: var(--surface-3); position: relative; }
+  .track i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+  .track .fadezone { position: absolute; top: -3px; bottom: -3px; right: 0; width: 5%; border-radius: 3px; background: repeating-linear-gradient(90deg, rgba(240,160,75,.35) 0 3px, transparent 3px 6px); }
+  .track .knob { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--text); }
+  .pr { display: flex; align-items: center; justify-content: flex-end; gap: 14px; color: var(--muted); }
+  .pill { font-size: 11px; padding: 3px 7px; border-radius: 5px; background: var(--surface-3); color: var(--muted); letter-spacing: .3px; }
+  .pill.on { background: var(--accent-soft); color: var(--accent); }
+  .vol { display: flex; align-items: center; gap: 8px; width: 120px; }
+
+  /* EQ */
+  .eqwrap { background: var(--surface); border-radius: 14px; padding: 18px 20px; }
+  .eqhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .toggle { width: 40px; height: 22px; border-radius: 999px; background: var(--accent); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-text); }
+  .toggle.off { background: var(--surface-3); }
+  .toggle.off::after { right: auto; left: 3px; background: var(--muted); }
+  .curve { width: 100%; height: 120px; display: block; margin: 6px 0 4px; }
+  .bands { display: grid; grid-template-columns: 56px repeat(10, 1fr); gap: 6px; align-items: end; }
+  .band { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+  .band .slot { width: 6px; height: 170px; border-radius: 6px; background: var(--surface-3); position: relative; }
+  .band .slot::before { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 1px; background: var(--line); }
+  .band .slot i { position: absolute; left: 0; right: 0; border-radius: 6px; background: var(--accent); }
+  .band .slot b { position: absolute; left: 50%; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; background: var(--text); box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  .band .val { color: var(--text); font-variant-numeric: tabular-nums; }
+  .band.pre .slot i { background: var(--muted); }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 14px; }
+
+  /* settings */
+  .set { max-width: 760px; }
+  .card { background: var(--surface); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); margin: 0; padding: 14px 16px 6px; font-weight: 600; }
+  .srow { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,.04); }
+  .srow .tx { flex: 1; min-width: 0; }
+  .srow .tx b { display: block; font-weight: 500; }
+  .srow .tx span { color: var(--muted); font-size: 12.5px; }
+  .srow .ok { color: #6fbf9a; font-size: 12.5px; }
+  .srow .warn { color: #e0a95a; font-size: 12.5px; }
+  .range { width: 220px; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .range .track { height: 4px; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 3px; }
+  .seg span { padding: 5px 10px; border-radius: 6px; color: var(--muted); font-size: 12.5px; }
+  .seg span.on { background: var(--surface-3); color: var(--text); }
+
+  /* ----- mobile frames ----- */
+  .phones { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
+  .phone { width: 300px; flex: none; }
+  .phone .cap { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .screen { width: 300px; height: 640px; border-radius: 30px; border: 1px solid var(--line); background: var(--bg); overflow: hidden; position: relative; display: flex; flex-direction: column; }
+  .status { height: 26px; flex: none; display: flex; justify-content: space-between; padding: 6px 20px 0; font-size: 11px; color: var(--muted); }
+  .mtop { padding: 8px 16px 6px; }
+  .mtop h2 { font-size: 22px; margin: 0 0 8px; }
+  .mbody { flex: 1; overflow: hidden; padding: 0 12px; }
+  .mlist .qi { padding: 6px 4px; }
+  .mini { flex: none; margin: 0 8px 6px; padding: 8px; border-radius: 12px; background: var(--surface-3); display: flex; align-items: center; gap: 10px; position: relative; overflow: hidden; }
+  .mini .cv { width: 40px; height: 40px; }
+  .mini .tx { flex: 1; min-width: 0; }
+  .mini .tx b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini .tx span { color: var(--muted); font-size: 12px; }
+  .mini .prog { position: absolute; left: 10px; right: 10px; bottom: 2px; height: 2px; background: rgba(255,255,255,.08); border-radius: 2px; }
+  .mini .prog i { display: block; height: 100%; width: 40%; background: var(--accent); border-radius: 2px; }
+  .tabs { flex: none; display: grid; grid-template-columns: repeat(4, 1fr); height: 58px; border-top: 1px solid var(--line); background: var(--surface); }
+  .tabs span { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10.5px; color: var(--faint); }
+  .tabs span i { font-style: normal; font-size: 17px; }
+  .tabs span.on { color: var(--accent); }
+  .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mgrid .album b { font-size: 13px; }
+  .mnp { flex: 1; display: flex; flex-direction: column; padding: 10px 22px 18px;
+         background: linear-gradient(180deg, rgba(240,160,75,.28), var(--bg) 60%); }
+  .mnp .grab { width: 36px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.25); margin: 4px auto 14px; }
+  .mnp .cv { width: 100%; aspect-ratio: 1; border-radius: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.5); }
+  .mnp h2 { font-size: 20px; margin: 18px 0 2px; }
+  .mnp .meta { color: var(--muted); }
+  .mnp .seek { margin-top: 16px; }
+  .mnp .ctl { justify-content: center; margin-top: 14px; gap: 28px; }
+  .mnp .ctl .play { width: 58px; height: 58px; font-size: 22px; }
+  .mnp .foot { display: flex; justify-content: space-between; margin-top: auto; color: var(--muted); font-size: 12px; }
+  .meq .bands { grid-template-columns: repeat(10, 1fr); gap: 2px; }
+  .meq .band .slot { height: 150px; width: 4px; }
+  .meq .band .slot b { width: 14px; height: 14px; margin-left: -7px; }
+  .meq .band { font-size: 9.5px; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>DaveAudioPlayer – návrh UI (MVP)</h1>
+  <p class="lead">Tmavý vzhled, akcentová barva se bere z obalu právě hrané skladby (tady oranžová z alba
+    <i>Letní noc</i>). Na PC tři sloupce – navigace, obsah, stále viditelná fronta – a přehrávač dole.
+    Na mobilu spodní navigace, mini přehrávač a obrazovka Právě hraje vytahovaná nahoru. Obaly jsou zástupné.</p>
+
+  <div class="switch" id="device">
+    <button class="on" data-dev="desk">PC (Windows)</button>
+    <button data-dev="mob">Mobil (Android)</button>
+  </div>
+  <div class="switch" id="screens">
+    <button class="on" data-s="tracks">Knihovna – skladby</button>
+    <button data-s="albums">Alba</button>
+    <button data-s="artists">Interpreti</button>
+    <button data-s="album">Detail alba</button>
+    <button data-s="np">Právě hraje</button>
+    <button data-s="eq">Ekvalizér</button>
+    <button data-s="settings">Nastavení</button>
+  </div>
+
+  <!-- ================= DESKTOP ================= -->
+  <div id="desk">
+    <div class="desk">
+      <nav class="nav">
+        <div class="brand"><i></i>DaveAudioPlayer</div>
+        <div class="label">Knihovna</div>
+        <button class="item" data-go="tracks"><span class="ic">♪</span>Skladby</button>
+        <button class="item" data-go="albums"><span class="ic">◫</span>Alba</button>
+        <button class="item" data-go="artists"><span class="ic">◉</span>Interpreti</button>
+        <button class="item"><span class="ic">≡</span>Playlisty</button>
+        <div class="sep"></div>
+        <button class="item" data-go="np"><span class="ic">▶</span>Právě hraje</button>
+        <button class="item" data-go="eq"><span class="ic">⫶</span>Ekvalizér</button>
+        <button class="item" data-go="settings"><span class="ic">⚙</span>Nastavení</button>
+        <div class="scan">Hledám nové skladby… <b style="color:var(--text)">Hudba</b> 1 240 / 3 100
+          <div class="bar"><i style="width:40%"></i></div>
+        </div>
+      </nav>
+
+      <main class="main">
+        <!-- tracks -->
+        <section data-screen="tracks" class="content-wrap" style="display:contents">
+          <div class="top">
+            <div class="search">⌕ <span>Hledat skladby, interprety, alba…</span></div>
+            <div class="chips">
+              <span class="chip on">Vše</span><span class="chip">Rock</span><span class="chip">Elektronika</span><span class="chip">90. léta</span><span class="chip">★ 4+</span>
+            </div>
+          </div>
+          <div class="content">
+            <h2>Skladby</h2>
+            <div class="sub">3 104 skladeb · 214 hodin · seřazeno podle interpreta alba</div>
+            <table class="tracks">
+              <colgroup><col class="c-num"><col class="c-title"><col class="c-art"><col class="c-alb"><col class="c-len"></colgroup>
+              <thead><tr><th class="num">#</th><th>Název</th><th>Interpret</th><th>Album</th><th class="r">Délka</th></tr></thead>
+              <tbody id="trackRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- albums -->
+        <section data-screen="albums" class="hidden" style="display:contents">
+          <div class="top">
+            <div class="search">⌕ <span>Hledat alba…</span></div>
+            <div class="chips"><span class="chip on">Interpret</span><span class="chip">Název</span><span class="chip">Rok</span><span class="chip">Naposledy přidaná</span></div>
+          </div>
+          <div class="content">
+            <h2>Alba</h2><div class="sub">268 alb</div>
+            <div class="grid" id="albumGrid"></div>
+          </div>
+        </section>
+
+        <!-- artists -->
+        <section data-screen="artists" class="hidden" style="display:contents">
+          <div class="top"><div class="search">⌕ <span>Hledat interprety…</span></div></div>
+          <div class="content">
+            <h2>Interpreti</h2><div class="sub">131 interpretů</div>
+            <div class="artists" id="artistGrid"></div>
+          </div>
+        </section>
+
+        <!-- album detail -->
+        <section data-screen="album" class="hidden" style="display:contents">
+          <div class="content" style="background:radial-gradient(900px 300px at 10% 0, rgba(240,160,75,.22), transparent 70%)">
+            <div class="hero">
+              <div class="cv c1"></div>
+              <div>
+                <div class="kind">Album · 2019</div>
+                <h2>Letní noc</h2>
+                <div class="sub" style="margin:0 0 12px">Polární záře · 10 skladeb · 41 min · FLAC 24/96</div>
+                <div class="row"><button class="btn primary">▶ Přehrát</button><button class="btn">+ Do fronty</button><button class="btn">Přehrát další</button></div>
+              </div>
+            </div>
+            <table class="tracks">
+              <colgroup><col class="c-num"><col style="width:55%"><col><col class="c-len"></colgroup>
+              <thead><tr><th class="num">#</th><th>Název</th><th>Interpret</th><th class="r">Délka</th></tr></thead>
+              <tbody id="albumRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- now playing -->
+        <section data-screen="np" class="hidden" style="display:contents">
+          <div class="np">
+            <div class="cv c1"></div>
+            <div>
+              <div class="sub" style="margin:0">Právě hraje · z alba</div>
+              <h2>Svítání nad městem</h2>
+              <div class="meta">Polární záře · Letní noc (2019)</div>
+              <div class="facts">
+                <span class="fact">FLAC <b>24 bit / 96 kHz</b></span>
+                <span class="fact">Hlasitost <b>−9,2 LUFS → −18</b></span>
+                <span class="fact">EQ <b>Rock</b></span>
+              </div>
+              <div class="seek" style="max-width:none">
+                <span>2:41</span><div class="track"><i style="width:58%"></i><span class="fadezone"></span><span class="knob" style="left:58%"></span></div><span>4:37</span>
+              </div>
+              <div class="ctl" style="margin-top:14px"><button>⏮</button><button class="play">⏸</button><button>⏭</button></div>
+              <div class="upnext">
+                <div class="cv c1"></div>
+                <div style="flex:1;min-width:0">
+                  <div class="sub" style="margin:0;font-size:12px">Další</div>
+                  <b>Ostrov</b> <span class="dim">· Polární záře</span>
+                  <div class="xfade" style="color:#6fbf9a">▬▬ bez mezery – další skladba alba</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- EQ -->
+        <section data-screen="eq" class="hidden" style="display:contents">
+          <div class="content">
+            <h2>Ekvalizér</h2><div class="sub">Platí pro všechno, co hraje. Změny se projeví hned (plynule, bez lupnutí).</div>
+            <div class="eqwrap">
+              <div class="eqhead">
+                <div class="row"><span class="toggle"></span><b>Zapnuto</b></div>
+                <div class="row"><button class="btn">Uložit preset</button><button class="btn">Vynulovat</button></div>
+              </div>
+              <div class="presets">
+                <span class="chip">Vypnuto</span><span class="chip on">Rock</span><span class="chip">Pop</span><span class="chip">Elektronika</span><span class="chip">Akustika</span><span class="chip">Basy +</span><span class="chip">Výšky +</span><span class="chip">Hlas</span><span class="chip">Moje: Sluchátka</span>
+              </div>
+              <svg class="curve" viewBox="0 0 1000 120" preserveAspectRatio="none">
+                <line x1="0" y1="60" x2="1000" y2="60" stroke="#2a2f3a"/>
+                <path d="M0,38 C80,36 140,40 200,48 S330,70 400,72 S520,70 600,64 S760,44 850,40 S960,42 1000,44" fill="none" stroke="var(--accent)" stroke-width="3"/>
+                <path d="M0,38 C80,36 140,40 200,48 S330,70 400,72 S520,70 600,64 S760,44 850,40 S960,42 1000,44 L1000,60 L0,60Z" fill="rgba(240,160,75,.10)"/>
+              </svg>
+              <div class="bands" id="bands"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- settings -->
+        <section data-screen="settings" class="hidden" style="display:contents">
+          <div class="content"><div class="set">
+            <h2>Nastavení</h2><div class="sub" style="margin-bottom:18px">Uloží se hned.</div>
+            <div class="card">
+              <h3>Složky s hudbou</h3>
+              <div class="srow"><div class="tx"><b>C:\Users\Dave\Music</b><span>2 840 skladeb · sleduje se</span></div><span class="ok">● aktuální</span><button class="btn">Odebrat</button></div>
+              <div class="srow"><div class="tx"><b>E:\FLAC</b><span>264 skladeb · disk není připojený</span></div><span class="warn">● nedostupná</span><button class="btn">Odebrat</button></div>
+              <div class="srow"><div class="tx"><b>Přidat složku…</b><span>Nové soubory se načtou samy, změny ve složkách se sledují.</span></div><button class="btn primary">+ Přidat</button><button class="btn">Znovu načíst vše</button></div>
+            </div>
+            <div class="card">
+              <h3>Přehrávání</h3>
+              <div class="srow"><div class="tx"><b>Crossfade</b><span>Prolnutí na konci skladby. Navazující skladby alba hrají vždy bez mezery.</span></div>
+                <div class="range"><div class="track"><i style="width:50%"></i><span class="knob" style="left:50%"></span></div><b style="color:var(--text)">6 s</b></div></div>
+              <div class="srow"><div class="tx"><b>Vyrovnat hlasitost</b><span>EBU R128, −18 LUFS. Skladby se změří na pozadí (812 zbývá).</span></div><span class="toggle"></span></div>
+              <div class="srow"><div class="tx"><b>Výstupní zařízení</b><span>Výchozí zařízení systému</span></div><span class="dim">Reproduktory (Realtek) ▾</span></div>
+            </div>
+            <div class="card">
+              <h3>Vzhled</h3>
+              <div class="srow"><div class="tx"><b>Motiv</b><span>Akcentová barva se bere z obalu právě hrané skladby.</span></div>
+                <span class="seg"><span class="on">Tmavý</span><span>Světlý</span><span>Podle systému</span></span></div>
+              <div class="srow"><div class="tx"><b>Barva z obalu</b><span>Vypnuto = pevná barva</span></div><span class="toggle"></span></div>
+            </div>
+            <div class="card">
+              <h3>O aplikaci</h3>
+              <div class="srow"><div class="tx"><b>DaveAudioPlayer 0.1</b><span>Databáze: %APPDATA%\DaveAudioPlayer\library.db</span></div></div>
+            </div>
+          </div></div>
+        </section>
+      </main>
+
+      <aside class="queue">
+        <div class="qhead"><b>Fronta</b><span>14 skladeb · 58 min</span></div>
+        <div class="qlist" id="queue"></div>
+      </aside>
+
+      <footer class="player">
+        <div class="pinfo"><div class="cv c1"></div><div style="min-width:0"><b>Svítání nad městem</b><span>Polární záře · Letní noc</span></div></div>
+        <div class="pc">
+          <div class="ctl"><button>⏮</button><button class="play">⏸</button><button>⏭</button></div>
+          <div class="seek"><span>2:41</span><div class="track"><i style="width:58%"></i><span class="fadezone"></span><span class="knob" style="left:58%"></span></div><span>4:37</span></div>
+        </div>
+        <div class="pr">
+          <span class="pill on" title="Vyrovnání hlasitosti">R128</span>
+          <span class="pill on" title="Crossfade">✕ 6 s</span>
+          <span class="pill on" title="Ekvalizér">EQ</span>
+          <div class="vol">🔊<div class="track"><i style="width:70%"></i></div></div>
+        </div>
+      </footer>
+    </div>
+    <p class="note"><b>Poznámky k PC:</b> fronta je vždy vidět; mezi položkami je malý popisek přechodu
+      (prolnutí / bez mezery u navazujících skladeb alba), aktuální skladba je zvýrazněná akcentem, už přehrané jsou ztlumené.
+      Přetahování za úchyt ⋮⋮ (ukázka: skladba „Prach“ se právě přetahuje). Šrafovaný konec časové osy ukazuje, kde začne prolnutí.
+      Dvojklik v knihovně = přehrát hned, menu skladby: Přehrát další / Do fronty. Pilulky vpravo dole zapínají R128, crossfade a EQ.
+      Pod 900 px šířky se fronta schová do vysouvacího panelu.</p>
+  </div>
+
+  <!-- ================= MOBILE ================= -->
+  <div id="mob" class="hidden">
+    <div class="phones" id="phones"></div>
+    <p class="note"><b>Poznámky k mobilu:</b> spodní navigace Knihovna / Hledat / Fronta / Nastavení, mini přehrávač nad ní
+      (klepnutí nebo tah nahoru otevře Právě hraje). Ekvalizér je dostupný z Právě hraje a z Nastavení.
+      Fronta je samostatná karta s přetahováním za úchyt; tah doleva skladbu odebere.</p>
+  </div>
+</div>
+
+<script>
+  const tracks = [
+    ["Svítání nad městem", "Polární záře", "Letní noc", "4:37", "c1"],
+    ["Ostrov", "Polární záře", "Letní noc", "3:58", "c1"],
+    ["Druhý břeh", "Anna Vlčková", "Proudy", "5:12", "c2"],
+    ["Neon", "Kvadrant", "Signály", "6:03", "c4"],
+    ["Prach", "Rezavý Kůň", "Silnice 9", "3:21", "c3"],
+    ["Teplé světlo", "Mira Sol", "Pobřeží", "4:44", "c5"],
+    ["Ticho po bouři", "Anna Vlčková", "Proudy", "3:36", "c2"],
+    ["Pulse 128", "Kvadrant", "Signály", "7:10", "c4"],
+    ["Papírový drak", "Lišky", "Domov", "2:58", "c6"],
+    ["Ocelové nebe", "Rezavý Kůň", "Silnice 9", "4:05", "c3"],
+    ["Mlha", "Severka", "Zima", "5:40", "c7"],
+    ["Noční vlak", "Mira Sol", "Pobřeží", "3:49", "c5"],
+    ["Hvězdná prach", "Kvadrant", "Signály", "5:55", "c4"],
+    ["Domů", "Lišky", "Domov", "3:12", "c6"],
+    ["Prázdná ulice", "Severka", "Zima", "4:21", "c7"],
+    ["Odraz", "Polární záře", "Letní noc", "4:02", "c1"],
+  ];
+  const albums = [
+    ["Letní noc", "Polární záře · 2019", "c1"], ["Proudy", "Anna Vlčková · 2021", "c2"],
+    ["Silnice 9", "Rezavý Kůň · 2016", "c3"], ["Signály", "Kvadrant · 2023", "c4"],
+    ["Pobřeží", "Mira Sol · 2020", "c5"], ["Domov", "Lišky · 2018", "c6"],
+    ["Zima", "Severka · 2022", "c7"], ["Live v Lucerně", "Polární záře · 2024", "c8"],
+    ["Ozvěny", "Anna Vlčková · 2017", "c2"], ["Remixy", "Kvadrant · 2024", "c4"],
+  ];
+  const artists = [["Anna Vlčková", "2 alba · 22 skladeb", "c2"], ["Kvadrant", "2 alba · 19 skladeb", "c4"],
+    ["Lišky", "1 album · 11 skladeb", "c6"], ["Mira Sol", "1 album · 12 skladeb", "c5"],
+    ["Polární záře", "2 alba · 24 skladeb", "c1"], ["Rezavý Kůň", "1 album · 9 skladeb", "c3"], ["Severka", "1 album · 10 skladeb", "c7"]];
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  document.getElementById("trackRows").innerHTML = tracks.map((t, i) =>
+    `<tr class="${i === 0 ? "playing" : ""}"><td class="num">${i === 0 ? "▶" : i + 1}</td>
+     <td><div class="t"><div class="cv ${t[4]}"></div><span>${esc(t[0])}</span></div></td>
+     <td class="dim">${esc(t[1])}</td><td class="dim">${esc(t[2])}</td><td class="r dim">${t[3]}</td></tr>`).join("");
+  document.getElementById("albumRows").innerHTML =
+    ["Svítání nad městem", "Ostrov", "Odraz", "Vlny", "Půlnoc", "Světla dálnice", "Sklo", "Severní vítr", "Ráno", "Letní noc"]
+      .map((n, i) => `<tr class="${i === 0 ? "playing" : ""}"><td class="num">${i === 0 ? "▶" : i + 1}</td><td>${n}</td><td class="dim">Polární záře</td><td class="r dim">${["4:37","3:58","4:02","5:01","3:44","4:20","2:59","4:48","3:33","5:20"][i]}</td></tr>`).join("");
+  const albumCard = a => `<div class="album"><div class="cv ${a[2]}"></div><b>${esc(a[0])}</b><span>${esc(a[1])}</span></div>`;
+  document.getElementById("albumGrid").innerHTML = albums.map(albumCard).join("");
+  document.getElementById("artistGrid").innerHTML = artists.map(a =>
+    `<div class="artist"><div class="cv ${a[2]}"></div><b>${esc(a[0])}</b><span>${a[1]}</span></div>`).join("");
+
+  // Queue: two played, current, next ones; transition labels between items.
+  const q = [[tracks[9], "past"], [tracks[2], "past"], [tracks[0], "now"], [tracks[1], "", "album"],
+             [tracks[15], "", "x"], [tracks[3], "", "x"], [tracks[4], "drag", "x"], [tracks[5], "", "x"],
+             [tracks[7], "", "x"], [tracks[10], "", "x"], [tracks[8], "", "x"], [tracks[13], "", "album"]];
+  const qItem = (t, cls, i) => `<div class="qi ${cls}"><span class="h">⋮⋮</span><div class="cv ${t[4]}"></div>
+     <div class="tx"><b>${esc(t[0])}</b><span>${esc(t[1])}</span></div><span class="d">${cls === "now" ? "♪" : t[3]}</span></div>`;
+  const trLabel = kind => kind === "album" ? `<div class="tr album">▬ bez mezery (album)</div>`
+                        : kind === "x" ? `<div class="tr">⨯ prolnutí 6 s</div>` : "";
+  document.getElementById("queue").innerHTML =
+    `<div class="qsec">Přehráno</div>` + q.slice(0, 2).map(([t, c]) => qItem(t, c)).join("") +
+    `<div class="qsec">Právě hraje</div>` + qItem(q[2][0], "now") +
+    `<div class="qsec">Další</div>` +
+    q.slice(3).map(([t, c, k], i) => trLabel(k) + (c === "drag" ? `<div class="qgap"></div>` : "") + qItem(t, c)).join("");
+
+  const freqs = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+  const gains = [4.5, 3.0, 1.0, -1.5, -2.5, -1.0, 1.5, 3.0, 4.0, 3.5];
+  const band = (label, g, pre) => {
+    const pct = 50 - g / 12 * 50;  // ±12 dB
+    const fill = g >= 0 ? `top:${pct}%;bottom:50%` : `top:50%;bottom:${100 - pct}%`;
+    return `<div class="band ${pre ? "pre" : ""}"><span class="val">${g > 0 ? "+" : ""}${g.toFixed(1)}</span>
+      <div class="slot"><i style="${fill}"></i><b style="top:calc(${pct}% - 9px)"></b></div><span>${label}</span></div>`;
+  };
+  document.getElementById("bands").innerHTML = band("Preamp", -3, true) + freqs.map((f, i) => band(f, gains[i])).join("");
+
+  // ----- phones -----
+  const status = `<div class="status"><span>9:41</span><span>▂▄▆ ▮</span></div>`;
+  const mini = `<div class="mini"><div class="cv c1"></div><div class="tx"><b>Svítání nad městem</b><span>Polární záře</span></div><span>⏸</span><span>⏭</span><div class="prog"><i></i></div></div>`;
+  const tabs = on => `<div class="tabs">${[["♪","Knihovna"],["⌕","Hledat"],["≡","Fronta"],["⚙","Nastavení"]]
+     .map(([i, l]) => `<span class="${l === on ? "on" : ""}"><i>${i}</i>${l}</span>`).join("")}</div>`;
+  const phone = (cap, inner) => `<div class="phone"><div class="screen">${status}${inner}</div><div class="cap">${cap}</div></div>`;
+  const mTrack = t => `<div class="qi"><div class="cv ${t[4]}"></div><div class="tx"><b>${esc(t[0])}</b><span>${esc(t[1])} · ${esc(t[2])}</span></div><span class="d">${t[3]}</span></div>`;
+
+  const phones = {
+    tracks: phone("Knihovna – skladby", `<div class="mtop"><h2>Knihovna</h2><div class="chips"><span class="chip on">Skladby</span><span class="chip">Alba</span><span class="chip">Interpreti</span><span class="chip">Playlisty</span></div></div>
+      <div class="mbody mlist">${tracks.slice(0, 9).map(mTrack).join("")}</div>${mini}${tabs("Knihovna")}`),
+    albums: phone("Knihovna – alba", `<div class="mtop"><h2>Knihovna</h2><div class="chips"><span class="chip">Skladby</span><span class="chip on">Alba</span><span class="chip">Interpreti</span></div></div>
+      <div class="mbody"><div class="mgrid">${albums.slice(0, 6).map(albumCard).join("")}</div></div>${mini}${tabs("Knihovna")}`),
+    artists: phone("Knihovna – interpreti", `<div class="mtop"><h2>Knihovna</h2><div class="chips"><span class="chip">Skladby</span><span class="chip">Alba</span><span class="chip on">Interpreti</span></div></div>
+      <div class="mbody mlist">${artists.map(a => `<div class="qi"><div class="cv ${a[2]}" style="border-radius:50%"></div><div class="tx"><b>${esc(a[0])}</b><span>${a[1]}</span></div></div>`).join("")}</div>${mini}${tabs("Knihovna")}`),
+    album: phone("Detail alba", `<div class="mbody" style="padding:0">
+        <div style="padding:10px 16px 14px;background:linear-gradient(180deg,rgba(240,160,75,.28),transparent)">
+          <div style="color:var(--muted)">‹ Zpět</div>
+          <div class="cv c1" style="width:170px;height:170px;margin:12px auto;border-radius:10px"></div>
+          <h2 style="margin:0;text-align:center;font-size:20px">Letní noc</h2>
+          <div class="sub" style="text-align:center;margin:2px 0 10px">Polární záře · 2019 · 41 min</div>
+          <div class="row" style="justify-content:center"><button class="btn primary">▶ Přehrát</button><button class="btn">+ Fronta</button></div>
+        </div>
+        <div style="padding:0 12px" class="mlist">${["Svítání nad městem","Ostrov","Odraz","Vlny"].map((n,i)=>`<div class="qi"><span class="d" style="width:18px">${i+1}</span><div class="tx"><b>${n}</b><span>Polární záře</span></div><span class="d">⋮</span></div>`).join("")}</div>
+      </div>${mini}${tabs("Knihovna")}`),
+    np: phone("Právě hraje", `<div class="mnp"><div class="grab"></div><div class="cv c1"></div>
+        <h2>Svítání nad městem</h2><div class="meta">Polární záře · Letní noc</div>
+        <div class="seek"><span>2:41</span><div class="track"><i style="width:58%"></i><span class="fadezone"></span><span class="knob" style="left:58%"></span></div><span>4:37</span></div>
+        <div class="ctl"><button>⏮</button><button class="play">⏸</button><button>⏭</button></div>
+        <div class="xfade" style="justify-content:center;color:#6fbf9a;margin-top:14px">Další: Ostrov · bez mezery (album)</div>
+        <div class="foot"><span>⫶ EQ: Rock</span><span class="pill on">R128</span><span>≡ Fronta</span></div></div>`),
+    queue: phone("Fronta", `<div class="mtop"><h2>Fronta</h2><div class="sub" style="margin:0">14 skladeb · 58 min · <span style="color:var(--accent)">Vymazat</span></div></div>
+        <div class="mbody mlist" style="padding:0 8px">${qItem(tracks[0], "now")}${trLabel("album")}${qItem(tracks[1], "")}${trLabel("x")}${qItem(tracks[15], "")}${trLabel("x")}${qItem(tracks[3], "drag")}${trLabel("x")}${qItem(tracks[4], "")}${trLabel("x")}${qItem(tracks[5], "")}</div>${mini}${tabs("Fronta")}`),
+    eq: phone("Ekvalizér", `<div class="mtop"><h2>Ekvalizér</h2><div class="row" style="justify-content:space-between"><span class="row"><span class="toggle"></span> Zapnuto</span><span class="dim">Preamp −3 dB</span></div></div>
+        <div class="mbody meq"><div class="presets"><span class="chip on">Rock</span><span class="chip">Pop</span><span class="chip">Basy +</span><span class="chip">Hlas</span><span class="chip">Vypnuto</span></div>
+        <svg class="curve" viewBox="0 0 1000 120" preserveAspectRatio="none" style="height:70px"><line x1="0" y1="60" x2="1000" y2="60" stroke="#2a2f3a"/><path d="M0,38 C80,36 140,40 200,48 S330,70 400,72 S520,70 600,64 S760,44 850,40 S960,42 1000,44" fill="none" stroke="var(--accent)" stroke-width="4"/></svg>
+        <div class="bands">${freqs.map((f, i) => band(f, gains[i])).join("")}</div></div>${mini}${tabs("Nastavení")}`),
+    settings: phone("Nastavení", `<div class="mtop"><h2>Nastavení</h2></div><div class="mbody" style="overflow:auto">
+        <div class="card"><h3>Složky</h3><div class="srow"><div class="tx"><b>Hudba</b><span>/storage/emulated/0/Music · 1 120</span></div><span class="ok">●</span></div><div class="srow"><div class="tx"><b>+ Přidat složku</b></div></div></div>
+        <div class="card"><h3>Přehrávání</h3><div class="srow"><div class="tx"><b>Crossfade</b><span>6 s</span></div><span class="dim">›</span></div><div class="srow"><div class="tx"><b>Vyrovnat hlasitost</b><span>−18 LUFS</span></div><span class="toggle"></span></div><div class="srow"><div class="tx"><b>Ekvalizér</b><span>Rock</span></div><span class="dim">›</span></div></div>
+        <div class="card"><h3>Vzhled</h3><div class="srow"><div class="tx"><b>Barva z obalu</b></div><span class="toggle"></span></div></div>
+      </div>${mini}${tabs("Nastavení")}`),
+  };
+  const mobileSets = {
+    tracks: ["tracks", "np", "queue"], albums: ["albums", "album", "np"], artists: ["artists", "albums", "np"],
+    album: ["album", "np", "queue"], np: ["np", "queue", "eq"], eq: ["eq", "np", "settings"], settings: ["settings", "eq", "tracks"],
+  };
+
+  let current = "tracks", device = "desk";
+  function show() {
+    document.querySelectorAll("#screens button").forEach(b => b.classList.toggle("on", b.dataset.s === current));
+    document.querySelectorAll("#device button").forEach(b => b.classList.toggle("on", b.dataset.dev === device));
+    document.getElementById("desk").classList.toggle("hidden", device !== "desk");
+    document.getElementById("mob").classList.toggle("hidden", device !== "mob");
+    document.querySelectorAll("[data-screen]").forEach(s => s.classList.toggle("hidden", s.dataset.screen !== current));
+    const navTarget = { album: "albums" }[current] || current;
+    document.querySelectorAll(".nav .item").forEach(b => b.classList.toggle("on", b.dataset.go === navTarget));
+    document.getElementById("phones").innerHTML = mobileSets[current].map(k => phones[k]).join("");
+  }
+  document.getElementById("screens").addEventListener("click", e => { if (e.target.dataset.s) { current = e.target.dataset.s; show(); } });
+  document.getElementById("device").addEventListener("click", e => { if (e.target.dataset.dev) { device = e.target.dataset.dev; show(); } });
+  document.querySelector(".nav").addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) { current = b.dataset.go; show(); } });
+  document.getElementById("albumGrid").addEventListener("click", () => { current = "album"; show(); });
+  show();
+</script>
+</body>
+</html>
