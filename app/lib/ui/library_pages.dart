@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
+import 'folder_picker.dart';
 import 'widgets.dart';
 
 /// Opens album and artist details inside the content area's navigator.
@@ -207,7 +208,14 @@ class _TracksPageState extends State<TracksPage> {
               hasScrollBody: false,
               child: EmptyState(
                 icon: results == null ? Icons.library_music_outlined : Icons.search_off,
-                text: results == null ? 'Knihovna je prázdná.\nPřidej složku s hudbou v Nastavení.' : 'Nic nenalezeno',
+                text: results == null ? 'Knihovna je prázdná.' : 'Nic nenalezeno',
+                action: results == null
+                    ? FilledButton.icon(
+                        onPressed: () => addMusicFolders(context, player),
+                        icon: const Icon(Icons.create_new_folder_outlined),
+                        label: const Text('Přidat hudbu'),
+                      )
+                    : null,
               ),
             )
           else

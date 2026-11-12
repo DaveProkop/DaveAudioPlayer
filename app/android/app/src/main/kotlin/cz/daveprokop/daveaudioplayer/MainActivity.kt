@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -47,9 +48,57 @@ class MainActivity : AudioServiceActivity() {
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath
                 )
                 "requestAudioPermission" -> requestAudioPermission(result)
+                "musicFolders" -> Thread {
+                    val folders = try {
+                        musicFolders()
+                    } catch (e: Exception) {
+                        emptyList<Map<String, Any>>()
+                    }
+                    runOnUiThread { result.success(folders) }
+                }.start()
                 else -> result.notImplemented()
             }
         }
+    }
+
+    /**
+     * Folders that hold music, found through MediaStore: each music file counts towards the
+     * top-level folder of its storage volume (".../0/Music/Artist/Album" → ".../0/Music").
+     * Largest first.
+     */
+    private fun musicFolders(): List<Map<String, Any>> {
+        val counts = HashMap<String, Int>()
+        @Suppress("DEPRECATION") // DATA still holds the file path, which is what the scanner uses.
+        val projection = arrayOf(MediaStore.Audio.Media.DATA)
+        contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+            null,
+            null,
+        )?.use { cursor ->
+            val column = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            while (cursor.moveToNext()) {
+                val path = cursor.getString(column) ?: continue
+                val folder = topFolder(path) ?: continue
+                counts[folder] = (counts[folder] ?: 0) + 1
+            }
+        }
+        return counts.entries
+            .sortedByDescending { it.value }
+            .map { mapOf("path" to it.key, "count" to it.value) }
+    }
+
+    /** "/storage/emulated/0/Music/a/b.mp3" → "/storage/emulated/0/Music"; null outside /storage. */
+    private fun topFolder(file: String): String? {
+        val parts = file.split('/').filter { it.isNotEmpty() }
+        if (parts.size < 3 || parts[0] != "storage") return null
+        // Volume root: /storage/emulated/<user> or /storage/<sd-card-id>.
+        val rootParts = if (parts[1] == "emulated") 3 else 2
+        if (parts.size <= rootParts) return null
+        // A file directly in the volume root counts for the root itself.
+        val take = if (parts.size == rootParts + 1) rootParts else rootParts + 1
+        return "/" + parts.take(take).joinToString("/")
     }
 
     private fun requestAudioPermission(result: MethodChannel.Result) {

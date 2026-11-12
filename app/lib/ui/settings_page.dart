@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../platform.dart';
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import '../src/rust/api/player.dart' as rust;
+import 'folder_picker.dart';
 import 'library_pages.dart' show LibraryFuture;
 import 'theme.dart';
 import 'widgets.dart';
@@ -70,7 +70,7 @@ class SettingsPage extends StatelessWidget {
                         runSpacing: 8,
                         children: [
                           FilledButton.icon(
-                            onPressed: () => addFolderDialog(context, player),
+                            onPressed: () => addMusicFolders(context, player),
                             icon: const Icon(Icons.create_new_folder_outlined),
                             label: const Text('Přidat složku'),
                           ),
@@ -205,37 +205,5 @@ class _Card extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Asks for a folder path (prefilled with the usual music folder) and adds it.
-Future<void> addFolderDialog(BuildContext context, PlayerController player) async {
-  if (!await AppPlatform.ensureAudioPermission()) {
-    player.messages.add('Bez oprávnění ke čtení hudby nelze složku načíst');
-    return;
-  }
-  final text = TextEditingController(text: await AppPlatform.defaultMusicDir());
-  if (!context.mounted) return;
-  final path = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Přidat složku s hudbou'),
-      content: SizedBox(
-        width: 420,
-        child: TextField(
-          controller: text,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Cesta ke složce'),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Zrušit')),
-        FilledButton(onPressed: () => Navigator.pop(context, text.text), child: const Text('Přidat')),
-      ],
-    ),
-  );
-  if (path != null && path.trim().isNotEmpty) {
-    await rust.addFolder(path: path.trim());
   }
 }
