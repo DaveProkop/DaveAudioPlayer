@@ -211,6 +211,12 @@ pub fn add_folder(path: String) -> Result<()> {
     send(Command::AddFolder(PathBuf::from(path)))
 }
 
+/// Removes a music folder (`FolderInfo::id`) and its tracks from the library; the files on
+/// disk stay.
+pub fn remove_folder(folder_id: i64) -> Result<()> {
+    send(Command::RemoveFolder(folder_id))
+}
+
 pub fn rescan_library() -> Result<()> {
     send(Command::RescanLibrary)
 }
@@ -314,6 +320,7 @@ pub enum AppEventKind {
     Error,
     ScanProgress,
     ScanFinished,
+    LibraryChanged,
 }
 
 /// One event from the engine; `kind` says which fields are set.
@@ -418,6 +425,7 @@ fn to_dto(event: Event) -> AppEvent {
             scan_total: Some(total as u32),
             ..AppEvent::new(AppEventKind::ScanProgress)
         },
+        Event::LibraryChanged => AppEvent::new(AppEventKind::LibraryChanged),
         Event::ScanFinished(s) => AppEvent {
             scan_summary: Some(ScanSummaryDto {
                 added: s.added as u32,

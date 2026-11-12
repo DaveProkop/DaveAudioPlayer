@@ -45,19 +45,21 @@ class SettingsPage extends StatelessWidget {
                             ),
                           for (final f in folders)
                             ListTile(
-                              leading: Icon(Icons.folder_outlined, color: scheme.onSurfaceVariant),
-                              title: Text(f.path),
+                              leading: Icon(
+                                Icons.folder_outlined,
+                                color: f.available ? scheme.onSurfaceVariant : context.appColors.warn,
+                              ),
+                              title: Text(friendlyPath(f.path)),
                               subtitle: Text(
                                 f.available
                                     ? '${tracksLabel(f.trackCount)} · sleduje se'
                                     : '${tracksLabel(f.trackCount)} · složka není dostupná',
+                                style: f.available ? null : TextStyle(color: context.appColors.warn),
                               ),
-                              trailing: Text(
-                                f.available ? '● aktuální' : '● nedostupná',
-                                style: TextStyle(
-                                  color: f.available ? context.appColors.ok : context.appColors.warn,
-                                  fontSize: 12.5,
-                                ),
+                              trailing: IconButton(
+                                tooltip: 'Odebrat z knihovny',
+                                icon: const Icon(Icons.remove_circle_outline),
+                                onPressed: () => _confirmRemove(context, f),
                               ),
                             ),
                         ],
@@ -206,4 +208,23 @@ class _Card extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _confirmRemove(BuildContext context, FolderInfo f) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Odebrat složku z knihovny?'),
+      content: Text(
+        '${friendlyPath(f.path)}\n\n'
+        '${tracksLabel(f.trackCount)} zmizí z knihovny, fronty i statistik. '
+        'Soubory na disku zůstanou.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Zrušit')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Odebrat')),
+      ],
+    ),
+  );
+  if (ok == true) await rust.removeFolder(folderId: f.id);
 }

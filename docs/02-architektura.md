@@ -78,6 +78,16 @@ Pravidla:
 - velké seznamy stránkovaně, Flutter virtualizuje
 - obaly přes cestu k souboru v cache, ne jako bajty přes most
 
+## Složky knihovny
+Kořeny (`library_root`) se nepřekrývají, jinak by se skladby zobrazily dvakrát
+(`dap_library::roots`). Složka uvnitř existujícího kořene se nepřidá; nadřazená složka
+převezme soubory vnořených kořenů (skladby si nechají id, tedy hodnocení, statistiky i místo
+ve frontě). Překrývající se kořeny z dřívějška engine při startu sloučí, u duplicitního
+souboru zůstane starší záznam. Odebrání složky smaže její soubory a skladby z databáze
+(kaskádou), soubory na disku zůstanou. Výběr složky: Windows systémový dialog
+(`file_selector`), Android nabídne složky s hudbou z MediaStore (`IS_MUSIC`, seskupené podle
+složky nejvyšší úrovně na úložišti) a vlastní procházeč úložiště a SD karet.
+
 ## Sledování složek
 Vlákno `folder-watch` (engine, crate `notify`: ReadDirectoryChangesW / inotify) sleduje
 povolené kořeny knihovny rekurzivně. Změna audio souboru, obrázku nebo složky označí její

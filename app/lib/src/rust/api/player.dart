@@ -92,6 +92,11 @@ Future<void> clearQueue() => RustLib.instance.api.crateApiPlayerClearQueue();
 Future<void> addFolder({required String path}) =>
     RustLib.instance.api.crateApiPlayerAddFolder(path: path);
 
+/// Removes a music folder (`FolderInfo::id`) and its tracks from the library; the files on
+/// disk stay.
+Future<void> removeFolder({required PlatformInt64 folderId}) =>
+    RustLib.instance.api.crateApiPlayerRemoveFolder(folderId: folderId);
+
 Future<void> rescanLibrary() =>
     RustLib.instance.api.crateApiPlayerRescanLibrary();
 
@@ -165,6 +170,7 @@ enum AppEventKind {
   error,
   scanProgress,
   scanFinished,
+  libraryChanged,
 }
 
 enum PlayStatus { stopped, playing, paused }

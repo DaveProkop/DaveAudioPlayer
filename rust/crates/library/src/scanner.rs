@@ -57,19 +57,6 @@ pub struct ScanProgress<'a> {
 }
 
 /// Registers a library folder (idempotent) and returns its id.
-pub fn add_root(conn: &Connection, path: &Path) -> Result<i64> {
-    let p = path.to_string_lossy();
-    conn.execute(
-        "INSERT OR IGNORE INTO library_root (path, added_at) VALUES (?1, ?2)",
-        params![p, now_ms()],
-    )?;
-    Ok(
-        conn.query_row("SELECT id FROM library_root WHERE path = ?1", [p], |r| {
-            r.get(0)
-        })?,
-    )
-}
-
 struct Found {
     abs: PathBuf,
     rel: String,

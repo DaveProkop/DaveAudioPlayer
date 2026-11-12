@@ -21,7 +21,9 @@ use dap_dsp::eq::{BAND_COUNT, MAX_GAIN_DB};
 use dap_dsp::gain::db_to_gain;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
-use dap_library::{DbError, ScanJob, ScanReport, add_root};
+use dap_library::{
+    DbError, ScanJob, ScanReport, add_root, remove_root, repair_overlapping_roots,
+};
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -104,6 +106,8 @@ pub enum Command {
     },
     /// Registers a music folder and rescans the library.
     AddFolder(PathBuf),
+    /// Removes a music folder (by root id) and its tracks from the library.
+    RemoveFolder(i64),
     /// Rescans every registered folder.
     RescanLibrary,
     CancelScan,
@@ -160,6 +164,8 @@ pub enum Event {
     },
     /// A library scan finished; library views should refresh.
     ScanFinished(ScanSummary),
+    /// The library changed outside a scan (a folder was removed); views should refresh.
+    LibraryChanged,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -373,6 +379,10 @@ struct ScanState {
 impl Control {
     fn new(config: EngineConfig, events: Sender<Event>) -> Result<Self, String> {
         let (db, db_thread) = DbWriter::open(&config.db_path).map_err(|e| e.to_string())?;
+        // Overlapping folders (from before they were prevented) would list tracks twice.
+        if let Some(Err(e)) = db.call(|c| repair_overlapping_roots(c)) {
+            let _ = events.send(Event::Error(format!("library folders: {e}")));
+        }
         let reader = open_reader(&config.db_path).map_err(|e| e.to_string())?;
         let queue = Queue::load(&reader).map_err(|e| e.to_string())?;
         let error_tx = events.clone();
@@ -1036,6 +1046,17 @@ impl Control {
                     None => {}
                 }
             }
+            Command::RemoveFolder(root_id) => match self.db.call(move |c| remove_root(c, root_id)) {
+                Some(Ok(())) => {
+                    if let Some(w) = &self.watcher {
+                        w.refresh();
+                    }
+                    self.reload_queue();
+                    self.emit(Event::LibraryChanged);
+                }
+                Some(Err(e)) => self.emit(Event::Error(e.to_string())),
+                None => {}
+            },
             Command::RescanLibrary => self.start_scan(ScanScope::All, false),
             Command::CancelScan => self.scan.cancel.store(true, Ordering::Relaxed),
             Command::Shutdown => {}
@@ -1120,6 +1141,23 @@ impl Control {
         self.status = Status::Paused;
         self.save_state();
         self.emit_state();
+    }
+
+    /// Re-reads the queue after tracks were deleted underneath it (folder removed).
+    fn reload_queue(&mut self) {
+        match Queue::load(&self.reader) {
+            Ok(q) => self.queue = q,
+            Err(e) => {
+                self.emit(Event::Error(e.to_string()));
+                return;
+            }
+        }
+        if self.cursor_index().is_none() && self.cursor.is_some() {
+            // The current track went with the folder.
+            self.stop();
+            self.cursor = None;
+        }
+        self.queue_changed();
     }
 
     fn queue_changed(&mut self) {

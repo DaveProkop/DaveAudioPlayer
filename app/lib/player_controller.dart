@@ -116,6 +116,8 @@ class PlayerController extends ChangeNotifier {
         messages.add('Přeskočeno: ${t?.title ?? 'skladba'} (${e.message ?? ''})');
       case AppEventKind.error:
         messages.add('Chyba: ${e.message ?? ''}');
+      case AppEventKind.libraryChanged:
+        libraryVersion++;
       case AppEventKind.scanProgress:
         scanning = true;
         scanFolder = e.scanFolder;

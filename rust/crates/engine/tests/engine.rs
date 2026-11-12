@@ -618,3 +618,32 @@ fn volume_and_equalizer_survive_a_restart_but_ducking_does_not() {
         .unwrap();
     assert_eq!(theme, "light");
 }
+
+#[test]
+fn removing_a_folder_drops_its_tracks_from_the_queue() {
+    let dir = TempDir::new("remove-folder");
+    write_wav(&dir.music().join("a.wav"), 1, 4410);
+    let id = scan(&dir);
+    let engine = start(&dir, None);
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav")],
+        at: None,
+    });
+    wait_for(&engine, |e| matches!(e, Event::Queue(q) if q.len() == 1));
+    let conn = open_writer(&dir.db()).unwrap();
+    let root: i64 = conn
+        .query_row("SELECT id FROM library_root", [], |r| r.get(0))
+        .unwrap();
+    drop(conn);
+
+    engine.send(Command::RemoveFolder(root));
+    wait_for(&engine, |e| matches!(e, Event::Queue(q) if q.is_empty()));
+    wait_for(&engine, |e| matches!(e, Event::LibraryChanged));
+    engine.shutdown();
+
+    let conn = open_writer(&dir.db()).unwrap();
+    let tracks: i64 = conn
+        .query_row("SELECT count(*) FROM track", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(tracks, 0);
+}
