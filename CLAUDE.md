@@ -79,6 +79,9 @@ nebo složky, JPEG náhledy 64/256/1024 px; v UI, SMTC i Android notifikaci), sl
 (notify, debounce 3 s, sken jen dotčených kořenů + sken při startu), UI podle
 `design/mockups.html` (tmavé, akcent z obalu; PC: navigace + obsah + fronta, mobil: spodní
 navigace + mini přehrávač; knihovna, alba, interpreti, detail, právě hraje, fronta, EQ, nastavení).
+Tónina (Camelot) u skladeb: z tagu (TKEY/INITIALKEY, i Open Key a názvy tónin), jinak odhad
+z chromagramu v analýze na pozadí (jistota < 1; tag má 1); štítky v seznamech a frontě,
+kompatibilní tóniny k právě hrané zvýrazněné.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,

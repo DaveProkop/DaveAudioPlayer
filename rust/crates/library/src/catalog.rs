@@ -184,6 +184,33 @@ pub fn locked_fields(conn: &Connection, track_id: i64) -> Result<HashSet<String>
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
+/// Key confidence that marks a key read from tags (detected keys stay below it).
+pub const TAG_KEY_CONFIDENCE: f64 = 1.0;
+
+/// Stores the key from the file's tags (in `analysis`, next to detected values). A track
+/// whose tag no longer has a key loses a tag key but keeps a detected one.
+pub fn set_tag_key(conn: &Connection, track_id: i64, tag: Option<&str>) -> Result<()> {
+    match tag.and_then(dap_analysis::parse_key_tag) {
+        Some(key) => {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, key_camelot, key_confidence, analyzed_at)
+                 VALUES (?1, 0, ?2, ?3, ?4)
+                 ON CONFLICT (track_id) DO UPDATE SET
+                     key_camelot = excluded.key_camelot, key_confidence = excluded.key_confidence",
+                params![track_id, key.to_string(), TAG_KEY_CONFIDENCE, now_ms()],
+            )?;
+        }
+        None => {
+            conn.execute(
+                "UPDATE analysis SET key_camelot = NULL, key_confidence = NULL
+                 WHERE track_id = ?1 AND key_confidence >= ?2",
+                params![track_id, TAG_KEY_CONFIDENCE],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Sets a track's own cover (unless the user locked it) and gives its album that cover
 /// when the album has none yet.
 pub fn set_track_cover(conn: &Connection, track_id: i64, cover_id: Option<i64>) -> Result<()> {

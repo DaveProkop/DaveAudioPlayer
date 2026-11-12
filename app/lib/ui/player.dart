@@ -480,6 +480,7 @@ class NowPlayingView extends StatelessWidget {
           if (details != null) _format(details),
           if (details?.loudnessLufs != null && (s?.normalize ?? false))
             'Hlasitost ${details!.loudnessLufs!.toStringAsFixed(1).replaceAll('.', ',').replaceAll('-', '−')} → −18 LUFS',
+          if (details?.key != null) 'Tónina ${details!.key} · ${details.keyFromTag ? 'z tagu' : 'odhad'}',
           if (s?.eqEnabled ?? false) 'EQ zapnutý',
         ];
         final info = Column(
@@ -530,6 +531,16 @@ class NowPlayingView extends StatelessWidget {
                         children: [
                           Text('Další', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                           Text('${next.title} · ${next.artist}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                          if (t.key != null && next.key != null)
+                            Text(
+                              keysCompatible(t.key, next.key)
+                                  ? 'Tónina ${t.key} → ${next.key} · harmonicky sedí'
+                                  : 'Tónina ${t.key} → ${next.key} · nesedí',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: keysCompatible(t.key, next.key) ? context.appColors.ok : scheme.onSurfaceVariant,
+                              ),
+                            ),
                           Text(
                             gapless
                                 ? 'bez mezery – další skladba alba'

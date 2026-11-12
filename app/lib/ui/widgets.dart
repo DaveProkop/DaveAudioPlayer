@@ -173,6 +173,8 @@ class TrackRow extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final playing = player.currentTrack?.id == track.id;
+    // Keys are compared with the playing track, to pick what mixes well after it.
+    final reference = playing ? null : player.currentTrack?.key;
     final color = playing ? scheme.primary : scheme.onSurface;
     final muted = playing ? scheme.primary : scheme.onSurfaceVariant;
     final albumAction = track.albumId == null || openAlbum == null ? null : () => openAlbum!(track.albumId!);
@@ -219,6 +221,7 @@ class TrackRow extends StatelessWidget {
                         style: TextStyle(color: muted),
                       ),
                     ),
+                  KeyBadge(musicKey: track.key, reference: reference),
                   SizedBox(
                     width: 56,
                     child: Text(
@@ -246,6 +249,8 @@ class TrackRow extends StatelessWidget {
                       ],
                     ),
                   ),
+                  KeyBadge(musicKey: track.key, reference: reference),
+                  const SizedBox(width: 8),
                   Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall?.copyWith(color: muted)),
                   IconButton(
                     icon: const Icon(Icons.more_vert, size: 20),
@@ -332,6 +337,75 @@ class EmptyState extends StatelessWidget {
             ),
             if (action != null) ...[const SizedBox(height: 16), action!],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ----- musical key (Camelot) ---------------------------------------------------------------
+
+(int, bool)? _camelot(String? key) {
+  if (key == null || key.length < 2) return null;
+  final n = int.tryParse(key.substring(0, key.length - 1));
+  final letter = key[key.length - 1].toUpperCase();
+  if (n == null || n < 1 || n > 12 || (letter != 'A' && letter != 'B')) return null;
+  return (n, letter == 'A');
+}
+
+/// Harmonic mixing: the same key, a step around the Camelot wheel, or the relative
+/// major/minor.
+bool keysCompatible(String? a, String? b) {
+  final x = _camelot(a), y = _camelot(b);
+  if (x == null || y == null) return false;
+  final step = (x.$1 - y.$1) % 12;
+  return x.$2 == y.$2 ? (step == 0 || step == 1 || step == 11) : step == 0;
+}
+
+/// The Camelot wheel colour of a key (12 hues; minor darker than major).
+Color camelotColor(String key) {
+  final c = _camelot(key);
+  if (c == null) return Colors.grey;
+  final hue = (75.0 + (c.$1 - 1) * 30.0) % 360.0;
+  return HSLColor.fromAHSL(1, hue, .7, c.$2 ? .58 : .7).toColor();
+}
+
+/// A small Camelot badge ("8A"). With `reference` (the key it would follow) it is drawn
+/// strong when the keys mix well and faint when they clash.
+class KeyBadge extends StatelessWidget {
+  const KeyBadge({super.key, required this.musicKey, this.reference});
+
+  final String? musicKey;
+  final String? reference;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = musicKey;
+    if (k == null) return const SizedBox(width: 34);
+    final color = camelotColor(k);
+    final compare = reference != null;
+    final fits = compare && keysCompatible(k, reference);
+    return Tooltip(
+      message: fits ? 'Tónina $k – harmonicky sedí' : 'Tónina $k',
+      child: Opacity(
+        opacity: compare && !fits ? .45 : 1,
+        child: Container(
+          width: 34,
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: fits ? .9 : .18),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Text(
+            k,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: fits ? const Color(0xFF111111) : color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ),
       ),
     );

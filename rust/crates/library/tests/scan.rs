@@ -448,3 +448,33 @@ fn covers_come_from_tags_or_the_folder_also_for_an_existing_library() {
     scan_with_covers(&mut conn, root, &music, &covers);
     assert!(!covers.exists());
 }
+
+#[test]
+fn key_from_tags_is_stored_in_camelot() {
+    let dir = TempDir::new("key");
+    let path = dir.path("k.wav");
+    write_track(&path, 5, &Meta {
+        title: "Keyed",
+        artist: "A",
+        album: "B",
+        track: 1,
+        genre: "House",
+    });
+    let mut tag = Tag::new(TagType::Id3v2);
+    tag.set_title("Keyed".into());
+    tag.insert_text(ItemKey::InitialKey, "F#m".into());
+    tag.save_to_path(&path, WriteOptions::default()).unwrap();
+
+    let mut conn = open_in_memory().unwrap();
+    let root = add_root(&conn, &dir.0).unwrap();
+    scan(&mut conn, root);
+    let (key, conf): (String, f64) = conn
+        .query_row(
+            "SELECT a.key_camelot, a.key_confidence FROM analysis a JOIN track t ON t.id = a.track_id
+             WHERE t.title = 'Keyed'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((key.as_str(), conf), ("11A", 1.0));
+}

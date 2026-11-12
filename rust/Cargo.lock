@@ -327,6 +327,7 @@ name = "dap-analysis"
 version = "0.1.0"
 dependencies = [
  "ebur128",
+ "realfft",
 ]
 
 [[package]]
@@ -363,6 +364,7 @@ dependencies = [
 name = "dap-library"
 version = "0.1.0"
 dependencies = [
+ "dap-analysis",
  "dap-tags",
  "image",
  "lofty",

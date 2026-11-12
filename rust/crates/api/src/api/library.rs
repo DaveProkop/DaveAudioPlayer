@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
-use dap_engine::analyzer::LOUDNESS_ALGO;
+use dap_engine::analyzer::ANALYSIS_ALGO;
 use dap_library::covers::{cover_files, covers_dir};
 use dap_library::db::open_reader;
 use rusqlite::{Connection, OptionalExtension};
@@ -22,6 +22,8 @@ pub struct TrackInfo {
     pub track_no: Option<u32>,
     pub duration_ms: Option<i64>,
     pub missing: bool,
+    /// Musical key in Camelot notation ("8A"), from tags or detected; `None` until known.
+    pub key: Option<String>,
     /// Cover image files (64 px, 256 px, up to 1024 px); `None` when the track has none.
     pub cover_small: Option<String>,
     pub cover_medium: Option<String>,
@@ -74,6 +76,9 @@ pub struct TrackDetails {
     pub bitrate_kbps: Option<u32>,
     pub year: Option<i32>,
     pub loudness_lufs: Option<f64>,
+    /// Camelot key and whether it comes from the file's tags (else it was detected).
+    pub key: Option<String>,
+    pub key_from_tag: bool,
 }
 
 /// Closes the read connection (on engine stop, so the database file is released).
@@ -126,13 +131,15 @@ const TRACK_COLUMNS: &str = "t.id, t.title,
     coalesce((SELECT group_concat(a.name, ', ') FROM track_artist ta
               JOIN artist a ON a.id = ta.artist_id
               WHERE ta.track_id = t.id AND ta.role = 'main'), ''),
-    coalesce(al.title, ''), t.track_no, f.duration_ms, f.missing, c.hash, t.album_id";
+    coalesce(al.title, ''), t.track_no, f.duration_ms, f.missing, c.hash, t.album_id,
+    an.key_camelot";
 
 const TRACK_JOINS: &str = "FROM track t
     JOIN file f ON f.id = t.file_id
     LEFT JOIN album al ON al.id = t.album_id
     LEFT JOIN artist aa ON aa.id = al.album_artist_id
-    LEFT JOIN cover c ON c.id = coalesce(t.cover_id, al.cover_id)";
+    LEFT JOIN cover c ON c.id = coalesce(t.cover_id, al.cover_id)
+    LEFT JOIN analysis an ON an.track_id = t.id";
 
 /// Library order: album artist, album, disc, track.
 const TRACK_ORDER: &str = "ORDER BY coalesce(aa.name_sort, ''), coalesce(al.title_sort, ''),
@@ -149,6 +156,7 @@ fn row_to_track(r: &rusqlite::Row<'_>, covers: &Path) -> rusqlite::Result<TrackI
         track_no: r.get(4)?,
         duration_ms: r.get(5)?,
         missing: r.get(6)?,
+        key: r.get(9)?,
         cover_small: c.small,
         cover_medium: c.medium,
         cover_large: c.large,
@@ -368,7 +376,7 @@ pub fn library_stats() -> Result<LibraryStats> {
             "SELECT count(*) FROM track t JOIN file f ON f.id = t.file_id
              LEFT JOIN analysis a ON a.track_id = t.id
              WHERE f.missing = 0 AND (a.track_id IS NULL OR a.algo_version < ?1)",
-            [LOUDNESS_ALGO],
+            [ANALYSIS_ALGO],
             |r| r.get(0),
         )?;
         Ok(LibraryStats {
@@ -384,7 +392,8 @@ pub fn library_stats() -> Result<LibraryStats> {
 pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
     with_reader(|c| {
         c.query_row(
-            "SELECT f.format, f.sample_rate, f.bit_depth, f.bitrate, t.year, a.loudness_lufs
+            "SELECT f.format, f.sample_rate, f.bit_depth, f.bitrate, t.year, a.loudness_lufs,
+                    a.key_camelot, coalesce(a.key_confidence, 0) >= 1.0
              FROM track t JOIN file f ON f.id = t.file_id
              LEFT JOIN analysis a ON a.track_id = t.id
              WHERE t.id = ?1",
@@ -397,6 +406,8 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
                     bitrate_kbps: r.get(3)?,
                     year: r.get(4)?,
                     loudness_lufs: r.get(5)?,
+                    key: r.get(6)?,
+                    key_from_tag: r.get(7)?,
                 })
             },
         )

@@ -11,3 +11,4 @@ workspace = true
 
 [dependencies]
 ebur128 = "0.1.11"
+realfft = "3.5.1"

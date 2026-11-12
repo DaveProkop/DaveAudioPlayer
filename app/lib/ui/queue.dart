@@ -155,12 +155,25 @@ class QueueView extends StatelessWidget {
                                           ),
                                           Padding(
                                             padding: const EdgeInsets.only(left: 8, right: 4),
-                                            child: isNow
-                                                ? Icon(Icons.graphic_eq, size: 16, color: scheme.primary)
-                                                : Text(
-                                                    formatMs(t?.durationMs),
-                                                    style: TextStyle(fontSize: 12.5, color: scheme.outline),
-                                                  ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                // Each upcoming key compared with the one before it.
+                                                KeyBadge(
+                                                  musicKey: t?.key,
+                                                  reference: current != null && i > current
+                                                      ? player.track(queue[i - 1].trackId)?.key
+                                                      : null,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                isNow
+                                                    ? Icon(Icons.graphic_eq, size: 16, color: scheme.primary)
+                                                    : Text(
+                                                        formatMs(t?.durationMs),
+                                                        style: TextStyle(fontSize: 12.5, color: scheme.outline),
+                                                      ),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),

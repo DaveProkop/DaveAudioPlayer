@@ -41,6 +41,15 @@ Navazující skladby jednoho alba (stejné album, číslo skladby +1, příp. da
 zůstávají gapless a přebírají zesílení předchozí skladby, aby album hrálo, jak bylo zvládnuté.
 Crossfade 0–12 s (výchozí 6 s), jen při automatickém přechodu, ne při ručním přeskočení.
 
+## Tónina
+`analysis.key_camelot` + `key_confidence`. Sken zapíše tóninu z tagu (TKEY / INITIALKEY:
+Camelot, Open Key i názvy jako „F#m“) s jistotou 1,0 a `algo_version` 0. Analyzátor
+(`ANALYSIS_ALGO` 2) při jednom dekódování změří hlasitost i chromagram (FFT 16 384, C2–C7,
+každý blok normalizovaný) a tóninu odhadne korelací s profily dur/moll; odhad má jistotu
+≤ 0,99 a tóninu z tagu nepřepíše. Kořeny naskenované dřív si tóniny z tagů načtou jednou
+(stejný mechanismus jako obaly, `scan.covers_version` = 2). UI ukazuje Camelot štítky;
+kompatibilní tónina = stejné číslo, ±1 se stejným písmenem, nebo stejné číslo A↔B.
+
 ## Vyrovnání hlasitosti
 Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true
 peak do tabulky `analysis` (`algo_version` = 1). Přednost má fronta za aktuální skladbou; na PC

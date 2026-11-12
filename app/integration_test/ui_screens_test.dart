@@ -111,6 +111,8 @@ const _library = [
 
 Future<void> _writeLibrary(Directory music) async {
   var f = 220.0;
+  const keys = ['8A', '9A', '8B', '3A', '10B', '7A', '9B', '2A'];
+  var k = 0;
   for (final (artist, album, year, colors, titles) in _library) {
     final dir = await Directory('${music.path}/$artist/$album').create(recursive: true);
     await File('${dir.path}/cover.bmp').writeAsBytes(_coverBmp(colors[0], colors[1]));
@@ -123,6 +125,7 @@ Future<void> _writeLibrary(Directory music) async {
         'TALB': album,
         'TRCK': '${i + 1}/${titles.length}',
         'TDRC': '$year',
+        'TKEY': keys[k++ % keys.length],
       }));
     }
   }

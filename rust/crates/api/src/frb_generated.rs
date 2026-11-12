@@ -1988,6 +1988,8 @@ impl SseDecode for crate::api::library::TrackDetails {
         let mut var_bitrateKbps = <Option<u32>>::sse_decode(deserializer);
         let mut var_year = <Option<i32>>::sse_decode(deserializer);
         let mut var_loudnessLufs = <Option<f64>>::sse_decode(deserializer);
+        let mut var_key = <Option<String>>::sse_decode(deserializer);
+        let mut var_keyFromTag = <bool>::sse_decode(deserializer);
         return crate::api::library::TrackDetails {
             format: var_format,
             sample_rate: var_sampleRate,
@@ -1995,6 +1997,8 @@ impl SseDecode for crate::api::library::TrackDetails {
             bitrate_kbps: var_bitrateKbps,
             year: var_year,
             loudness_lufs: var_loudnessLufs,
+            key: var_key,
+            key_from_tag: var_keyFromTag,
         };
     }
 }
@@ -2010,6 +2014,7 @@ impl SseDecode for crate::api::library::TrackInfo {
         let mut var_trackNo = <Option<u32>>::sse_decode(deserializer);
         let mut var_durationMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_missing = <bool>::sse_decode(deserializer);
+        let mut var_key = <Option<String>>::sse_decode(deserializer);
         let mut var_coverSmall = <Option<String>>::sse_decode(deserializer);
         let mut var_coverMedium = <Option<String>>::sse_decode(deserializer);
         let mut var_coverLarge = <Option<String>>::sse_decode(deserializer);
@@ -2022,6 +2027,7 @@ impl SseDecode for crate::api::library::TrackInfo {
             track_no: var_trackNo,
             duration_ms: var_durationMs,
             missing: var_missing,
+            key: var_key,
             cover_small: var_coverSmall,
             cover_medium: var_coverMedium,
             cover_large: var_coverLarge,
@@ -2399,6 +2405,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::library::TrackDetails {
             self.bitrate_kbps.into_into_dart().into_dart(),
             self.year.into_into_dart().into_dart(),
             self.loudness_lufs.into_into_dart().into_dart(),
+            self.key.into_into_dart().into_dart(),
+            self.key_from_tag.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2426,6 +2434,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::library::TrackInfo {
             self.track_no.into_into_dart().into_dart(),
             self.duration_ms.into_into_dart().into_dart(),
             self.missing.into_into_dart().into_dart(),
+            self.key.into_into_dart().into_dart(),
             self.cover_small.into_into_dart().into_dart(),
             self.cover_medium.into_into_dart().into_dart(),
             self.cover_large.into_into_dart().into_dart(),
@@ -2844,6 +2853,8 @@ impl SseEncode for crate::api::library::TrackDetails {
         <Option<u32>>::sse_encode(self.bitrate_kbps, serializer);
         <Option<i32>>::sse_encode(self.year, serializer);
         <Option<f64>>::sse_encode(self.loudness_lufs, serializer);
+        <Option<String>>::sse_encode(self.key, serializer);
+        <bool>::sse_encode(self.key_from_tag, serializer);
     }
 }
 
@@ -2858,6 +2869,7 @@ impl SseEncode for crate::api::library::TrackInfo {
         <Option<u32>>::sse_encode(self.track_no, serializer);
         <Option<i64>>::sse_encode(self.duration_ms, serializer);
         <bool>::sse_encode(self.missing, serializer);
+        <Option<String>>::sse_encode(self.key, serializer);
         <Option<String>>::sse_encode(self.cover_small, serializer);
         <Option<String>>::sse_encode(self.cover_medium, serializer);
         <Option<String>>::sse_encode(self.cover_large, serializer);

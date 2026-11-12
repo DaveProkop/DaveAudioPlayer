@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use dap_analysis::LoudnessMeter;
+use dap_analysis::{KeyDetector, LoudnessMeter};
 use dap_audio_io::Decoder;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
@@ -20,8 +20,12 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::db_writer::DbWriter;
 
-/// Bumped when the loudness measurement changes; older rows are measured again.
+/// Rows from this version on hold a valid loudness measurement.
 pub const LOUDNESS_ALGO: i64 = 1;
+/// Bumped when the analysis changes; older rows are analyzed again. 2: adds the key.
+pub const ANALYSIS_ALGO: i64 = 2;
+/// Detected keys stay below the confidence that marks a key from tags.
+const MAX_DETECTED_KEY_CONFIDENCE: f64 = 0.99;
 /// How often an idle analyzer looks for new tracks (after a scan, for example).
 const IDLE_POLL: Duration = Duration::from_secs(10);
 const BACKGROUND: bool = !cfg!(target_os = "android");
@@ -31,6 +35,14 @@ const BACKGROUND: bool = !cfg!(target_os = "android");
 pub struct TrackLoudness {
     pub integrated_lufs: Option<f64>,
     pub true_peak_db: Option<f64>,
+}
+
+/// What one analysis pass measures.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Measured {
+    loudness: TrackLoudness,
+    /// Camelot key and confidence.
+    key: Option<(String, f64)>,
 }
 
 /// Stored loudness of a track; `None` when it has not been analyzed (by this algorithm).
@@ -125,20 +137,29 @@ impl Worker {
                     }
                     // A file that cannot be decoded is stored without values, so it is not
                     // retried on every pass; playback treats it as unknown loudness.
-                    let loudness = result.unwrap_or_default();
+                    let m = result.unwrap_or_default();
+                    let (key, key_confidence) = m.key.unzip();
                     let stored = self.db.call(move |c| {
+                        // A key from tags (confidence 1) beats a detected one.
                         c.execute(
                             "INSERT INTO analysis (track_id, algo_version, loudness_lufs,
-                                                   true_peak_db, analyzed_at)
-                             VALUES (?1, ?2, ?3, ?4, ?5)
+                                                   true_peak_db, key_camelot, key_confidence,
+                                                   analyzed_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                              ON CONFLICT (track_id) DO UPDATE SET
                                  algo_version = ?2, loudness_lufs = ?3, true_peak_db = ?4,
-                                 analyzed_at = ?5",
+                                 key_camelot = CASE WHEN analysis.key_confidence >= 1.0
+                                     THEN analysis.key_camelot ELSE ?5 END,
+                                 key_confidence = CASE WHEN analysis.key_confidence >= 1.0
+                                     THEN analysis.key_confidence ELSE ?6 END,
+                                 analyzed_at = ?7",
                             params![
                                 track_id,
-                                LOUDNESS_ALGO,
-                                loudness.integrated_lufs,
-                                loudness.true_peak_db,
+                                ANALYSIS_ALGO,
+                                m.loudness.integrated_lufs,
+                                m.loudness.true_peak_db,
+                                key,
+                                key_confidence,
                                 now_ms()
                             ],
                         )
@@ -166,7 +187,7 @@ impl Worker {
     fn next_track(&self) -> Option<(i64, PathBuf)> {
         let wanted: Vec<i64> = self.priority.lock().map(|p| p.clone()).unwrap_or_default();
         for id in wanted {
-            if stored_loudness(&self.reader, id).is_none()
+            if self.needs_analysis(id)
                 && let Some(path) = self.track_path(id)
             {
                 return Some((id, path));
@@ -183,13 +204,26 @@ impl Worker {
                  LEFT JOIN analysis a ON a.track_id = t.id
                  WHERE f.missing = 0 AND (a.track_id IS NULL OR a.algo_version < ?1)
                  ORDER BY t.id LIMIT 1",
-                [LOUDNESS_ALGO],
+                [ANALYSIS_ALGO],
                 |r| r.get(0),
             )
             .optional()
             .ok()
             .flatten()?;
         Some((id, self.track_path(id)?))
+    }
+
+    fn needs_analysis(&self, track_id: i64) -> bool {
+        self.reader
+            .query_row(
+                "SELECT 1 FROM analysis WHERE track_id = ?1 AND algo_version >= ?2",
+                params![track_id, ANALYSIS_ALGO],
+                |_| Ok(()),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .is_none()
     }
 
     fn track_path(&self, track_id: i64) -> Option<PathBuf> {
@@ -207,25 +241,35 @@ impl Worker {
     }
 }
 
-/// Decodes the whole file and measures it. `None` on a decoding error or cancel.
-fn measure(path: &Path, cancel: &AtomicBool) -> Option<TrackLoudness> {
+/// Decodes the whole file once and measures loudness and key. `None` on a decoding error
+/// or cancel.
+fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
     let mut decoder = Decoder::open(path).ok()?;
     let info = decoder.info().clone();
     let mut meter = LoudnessMeter::new(info.sample_rate, info.channels).ok()?;
+    let mut keys = KeyDetector::new(info.sample_rate, info.channels);
     loop {
         if cancel.load(Ordering::Relaxed) {
             return None;
         }
         match decoder.next_chunk() {
-            Ok(Some(chunk)) => meter.push(chunk).ok()?,
+            Ok(Some(chunk)) => {
+                meter.push(chunk).ok()?;
+                keys.push(chunk);
+            }
             Ok(None) => break,
             // What decoded before a damaged spot is still a fair measurement.
             Err(_) => break,
         }
     }
     let l = meter.finish();
-    Some(TrackLoudness {
-        integrated_lufs: l.integrated_lufs,
-        true_peak_db: l.true_peak_db,
+    Some(Measured {
+        loudness: TrackLoudness {
+            integrated_lufs: l.integrated_lufs,
+            true_peak_db: l.true_peak_db,
+        },
+        key: keys
+            .finish()
+            .map(|(k, c)| (k.camelot().to_string(), c.min(MAX_DETECTED_KEY_CONFIDENCE))),
     })
 }

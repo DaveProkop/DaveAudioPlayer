@@ -647,3 +647,47 @@ fn removing_a_folder_drops_its_tracks_from_the_queue() {
         .unwrap();
     assert_eq!(tracks, 0);
 }
+
+#[test]
+fn analysis_detects_keys_but_keeps_keys_from_tags() {
+    let dir = TempDir::new("keys");
+    write_wav(&dir.music().join("tagged.wav"), 1, 2 * RATE);
+    write_wav(&dir.music().join("plain.wav"), 2, 2 * RATE);
+    let id = scan(&dir);
+    {
+        // As the scanner stores a key read from tags.
+        let conn = open_writer(&dir.db()).unwrap();
+        conn.execute(
+            "INSERT INTO analysis (track_id, algo_version, key_camelot, key_confidence, analyzed_at)
+             VALUES (?1, 0, '3B', 1.0, 0)",
+            [id("tagged.wav")],
+        )
+        .unwrap();
+    }
+    let engine = start(&dir, None);
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("tagged.wav"), id("plain.wav")],
+        at: None,
+    });
+    let conn = open_writer(&dir.db()).unwrap();
+    let key_of = |name: &str| -> Option<(Option<String>, i64)> {
+        conn.query_row(
+            "SELECT key_camelot, algo_version FROM analysis WHERE track_id = ?1",
+            [id(name)],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while ![key_of("tagged.wav"), key_of("plain.wav")]
+        .iter()
+        .all(|k| k.as_ref().is_some_and(|(_, v)| *v >= 2))
+    {
+        assert!(Instant::now() < deadline, "analysis did not finish");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    engine.shutdown();
+    assert_eq!(key_of("tagged.wav").unwrap().0.as_deref(), Some("3B"), "tag key kept");
+    let detected = key_of("plain.wav").unwrap().0;
+    assert!(detected.as_deref().is_some_and(|k| dap_analysis::Camelot::parse(k).is_some()), "{detected:?}");
+}

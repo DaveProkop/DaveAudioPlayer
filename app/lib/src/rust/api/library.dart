@@ -230,6 +230,10 @@ class TrackDetails {
   final int? year;
   final double? loudnessLufs;
 
+  /// Camelot key and whether it comes from the file's tags (else it was detected).
+  final String? key;
+  final bool keyFromTag;
+
   const TrackDetails({
     required this.format,
     this.sampleRate,
@@ -237,6 +241,8 @@ class TrackDetails {
     this.bitrateKbps,
     this.year,
     this.loudnessLufs,
+    this.key,
+    required this.keyFromTag,
   });
 
   @override
@@ -246,7 +252,9 @@ class TrackDetails {
       bitDepth.hashCode ^
       bitrateKbps.hashCode ^
       year.hashCode ^
-      loudnessLufs.hashCode;
+      loudnessLufs.hashCode ^
+      key.hashCode ^
+      keyFromTag.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -258,7 +266,9 @@ class TrackDetails {
           bitDepth == other.bitDepth &&
           bitrateKbps == other.bitrateKbps &&
           year == other.year &&
-          loudnessLufs == other.loudnessLufs;
+          loudnessLufs == other.loudnessLufs &&
+          key == other.key &&
+          keyFromTag == other.keyFromTag;
 }
 
 class TrackInfo {
@@ -270,6 +280,9 @@ class TrackInfo {
   final int? trackNo;
   final PlatformInt64? durationMs;
   final bool missing;
+
+  /// Musical key in Camelot notation ("8A"), from tags or detected; `None` until known.
+  final String? key;
 
   /// Cover image files (64 px, 256 px, up to 1024 px); `None` when the track has none.
   final String? coverSmall;
@@ -285,6 +298,7 @@ class TrackInfo {
     this.trackNo,
     this.durationMs,
     required this.missing,
+    this.key,
     this.coverSmall,
     this.coverMedium,
     this.coverLarge,
@@ -300,6 +314,7 @@ class TrackInfo {
       trackNo.hashCode ^
       durationMs.hashCode ^
       missing.hashCode ^
+      key.hashCode ^
       coverSmall.hashCode ^
       coverMedium.hashCode ^
       coverLarge.hashCode;
@@ -317,6 +332,7 @@ class TrackInfo {
           trackNo == other.trackNo &&
           durationMs == other.durationMs &&
           missing == other.missing &&
+          key == other.key &&
           coverSmall == other.coverSmall &&
           coverMedium == other.coverMedium &&
           coverLarge == other.coverLarge;
