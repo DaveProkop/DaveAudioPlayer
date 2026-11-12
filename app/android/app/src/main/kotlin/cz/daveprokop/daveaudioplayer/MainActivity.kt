@@ -48,6 +48,14 @@ class MainActivity : AudioServiceActivity() {
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath
                 )
                 "requestAudioPermission" -> requestAudioPermission(result)
+                // Roots of all mounted storage volumes (internal, SD cards). Apps may not list
+                // /storage itself, but each volume has an app folder under <root>/Android/.
+                "storageRoots" -> result.success(
+                    getExternalFilesDirs(null)
+                        .mapNotNull { it?.absolutePath?.substringBefore("/Android/", "") }
+                        .filter { it.isNotEmpty() }
+                        .distinct()
+                )
                 "musicFolders" -> Thread {
                     val folders = try {
                         musicFolders()

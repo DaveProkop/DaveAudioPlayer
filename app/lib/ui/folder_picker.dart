@@ -43,20 +43,33 @@ Future<void> addMusicFolders(BuildContext context, PlayerController player) asyn
   }
 }
 
-/// "Internal storage" / "SD card" for volume roots, the folder name otherwise.
-String folderLabel(String path) {
-  if (path == '/storage/emulated/0') return 'Interní úložiště';
+/// The storage volume a path lies on: (root, "Interní úložiště" / "SD karta"), or null.
+(String, String)? _volume(String path) {
   final parts = path.split('/').where((p) => p.isNotEmpty).toList();
-  if (parts.length == 2 && parts[0] == 'storage') return 'SD karta (${parts[1]})';
+  if (parts.length >= 3 && parts[0] == 'storage' && parts[1] == 'emulated') {
+    return ('/storage/emulated/${parts[2]}', 'Interní úložiště');
+  }
+  if (parts.length >= 2 && parts[0] == 'storage' && parts[1] != 'emulated' && parts[1] != 'self') {
+    return ('/storage/${parts[1]}', 'SD karta');
+  }
+  return null;
+}
+
+/// "Interní úložiště" / "SD karta" for volume roots, the folder name otherwise.
+String folderLabel(String path) {
+  final v = _volume(path);
+  final trimmed = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+  if (v != null && trimmed == v.$1) return v.$2;
+  final parts = path.split('/').where((p) => p.isNotEmpty).toList();
   return parts.isEmpty ? path : parts.last;
 }
 
-/// Shorter path for display: the internal storage prefix is left out.
+/// Readable path: the volume by name instead of /storage/… ("SD karta/Music").
 String friendlyPath(String path) {
-  const internal = '/storage/emulated/0';
-  if (path == internal) return 'Interní úložiště';
-  if (path.startsWith('$internal/')) return 'Interní úložiště/${path.substring(internal.length + 1)}';
-  return path;
+  final v = _volume(path);
+  if (v == null) return path;
+  final rest = path.length > v.$1.length ? path.substring(v.$1.length + 1) : '';
+  return rest.isEmpty ? v.$2 : '${v.$2}/$rest';
 }
 
 bool _covered(String path, List<String> roots) =>
@@ -81,8 +94,10 @@ class _MusicFoldersPageState extends State<_MusicFoldersPage> {
   final _extra = <String>[];
 
   Future<void> _browse() async {
+    final roots = await AppPlatform.storageRoots();
+    if (!mounted) return;
     final path = await Navigator.of(context)
-        .push<String>(MaterialPageRoute(builder: (_) => FolderBrowserPage(roots: AppPlatform.storageRoots())));
+        .push<String>(MaterialPageRoute(builder: (_) => FolderBrowserPage(roots: roots)));
     if (path == null || !mounted) return;
     setState(() {
       if (!_extra.contains(path) && !widget.found.any((f) => f.$1 == path)) _extra.add(path);
@@ -121,8 +136,8 @@ class _MusicFoldersPageState extends State<_MusicFoldersPage> {
                       ? null
                       : (v) => setState(() => v == true ? _selected.add(path) : _selected.remove(path)),
                   secondary: Icon(Icons.folder_outlined, color: scheme.onSurfaceVariant),
-                  title: Text(folderLabel(path)),
-                  subtitle: Text(inLibrary ? '$detail · už je v knihovně' : '$detail · ${friendlyPath(path)}'),
+                  title: Text(friendlyPath(path)),
+                  subtitle: Text(inLibrary ? '$detail · už je v knihovně' : detail),
                 );
               },
             ),

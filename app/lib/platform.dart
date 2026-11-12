@@ -32,17 +32,11 @@ class AppPlatform {
     return [for (final m in list) (m['path'] as String, m['count'] as int)];
   }
 
-  /// Android: storage volumes to browse (internal storage, SD cards).
-  static List<String> storageRoots() {
+  /// Android: roots of the mounted storage volumes (internal storage, SD cards).
+  static Future<List<String>> storageRoots() async {
     if (!Platform.isAndroid) return const [];
-    final roots = <String>['/storage/emulated/0'];
-    try {
-      for (final e in Directory('/storage').listSync()) {
-        final name = e.path.split('/').last;
-        if (e is Directory && name != 'emulated' && name != 'self') roots.add(e.path);
-      }
-    } catch (_) {}
-    return roots;
+    final roots = await _channel.invokeListMethod<String>('storageRoots') ?? const [];
+    return roots.isEmpty ? const ['/storage/emulated/0'] : roots;
   }
 
   /// Asks for READ_MEDIA_AUDIO (Android 13+) or READ_EXTERNAL_STORAGE. True when granted.
