@@ -1,8 +1,10 @@
 package cz.daveprokop.daveaudioplayer
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,6 +26,17 @@ class MainActivity : AudioServiceActivity() {
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+
+    /** Implemented in Rust (rust/crates/api/src/android.rs): gives the audio backend the JVM and context. */
+    private external fun initNative(context: Context)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Before super.onCreate: AudioServiceActivity starts the Flutter engine there, and
+        // Dart starts the Rust audio engine right away, which needs the Android context.
+        System.loadLibrary("dap_api")
+        initNative(applicationContext)
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

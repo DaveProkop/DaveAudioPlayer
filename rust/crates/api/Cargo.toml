@@ -38,3 +38,9 @@ windows = { version = "0.62.2", features = [
 [target.'cfg(windows)'.dev-dependencies]
 # The tests look our session up the way Windows itself does.
 windows = { version = "0.62.2", features = ["Foundation_Collections", "Media_Control"] }
+
+# cpal's AAudio backend reaches Android's AudioManager through ndk-context, which the
+# app initializes from MainActivity (see src/android.rs). Both are already in the tree.
+[target.'cfg(target_os = "android")'.dependencies]
+jni-sys = "0.4.1"
+ndk-context = "0.1.1"

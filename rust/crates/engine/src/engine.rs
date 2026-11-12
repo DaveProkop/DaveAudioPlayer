@@ -10,15 +10,15 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use dap_analysis::normalization_gain_db;
-use dap_dsp::gain::db_to_gain;
 use dap_dsp::eq::{BAND_COUNT, MAX_GAIN_DB};
+use dap_dsp::gain::db_to_gain;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
 use dap_library::{DbError, ScanJob, ScanReport, add_root};
@@ -27,10 +27,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::analyzer::{Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
-use crate::watcher::FolderWatcher;
 use crate::deck::{DeckInfo, spawn_deck};
 use crate::output::{self, Output, OutputConfig};
 use crate::queue::{Queue, QueueEntry};
+use crate::watcher::FolderWatcher;
 
 /// "Previous" restarts the current track when it has played longer than this.
 const RESTART_THRESHOLD_MS: u64 = 3000;
@@ -199,13 +199,21 @@ impl Engine {
         let (ready_tx, ready_rx) = bounded(1);
         let thread = std::thread::Builder::new()
             .name("engine-control".into())
-            .spawn(move || match Control::new(config, event_tx) {
-                Ok(mut control) => {
-                    let _ = ready_tx.send(Ok(()));
-                    control.run(rx);
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
+            .spawn(move || {
+                // A panic while starting (audio backend, database) becomes an error the app
+                // can show, instead of a thread that silently died.
+                let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    Control::new(config, event_tx)
+                }))
+                .unwrap_or_else(|p| Err(format!("engine start panicked: {}", panic_message(&p))));
+                match started {
+                    Ok(mut control) => {
+                        let _ = ready_tx.send(Ok(()));
+                        control.run(rx);
+                    }
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                    }
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -380,7 +388,9 @@ impl Control {
             .max(0) as u64;
         let settings = PlayerSettings {
             crossfade_ms: read_setting(&reader, SETTING_CROSSFADE)
-                .map_or(DEFAULT_CROSSFADE_MS, |v| v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32),
+                .map_or(DEFAULT_CROSSFADE_MS, |v| {
+                    v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32
+                }),
             normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
             volume: read_setting_str(&reader, SETTING_VOLUME)
                 .and_then(|v| v.parse::<f32>().ok())
@@ -957,7 +967,11 @@ impl Control {
                 self.queue_changed();
             }
             Command::SetVolume(v) => {
-                let v = if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 };
+                let v = if v.is_finite() {
+                    v.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
                 self.settings.volume = v;
                 self.apply_volume();
                 self.save_setting(SETTING_VOLUME, v.to_string());
@@ -1187,6 +1201,13 @@ impl Control {
             self.emit_state();
         }
     }
+}
+
+fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+    p.downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| p.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".into())
 }
 
 fn read_setting_str(conn: &Connection, key: &str) -> Option<String> {

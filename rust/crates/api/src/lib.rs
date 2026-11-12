@@ -4,6 +4,8 @@
 //! (run in `app/`). Panics in these functions are caught by the bridge and surface as Dart
 //! exceptions; they never take the app down.
 
+#[cfg(target_os = "android")]
+mod android;
 pub mod api;
 mod frb_generated;
 pub mod media_controls;
