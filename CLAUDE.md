@@ -105,4 +105,4 @@ Výběr výstupního zařízení (`player.output_device`, za běhu nový výstup
 pokračuje na místě; odpojené zařízení → výchozí).
 Playlisty (`dap_library::playlists`, zápisy přes `Engine::db()` na zapisovací vlákno;
 seznam, detail s přesouváním, přidání z menu skladby nebo alba, uložení fronty).
-Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: vlastní presety EQ.
+Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Vlastní presety EQ (JSON v `setting` `ui.eq_user_presets`). MVP UI je kompletní.

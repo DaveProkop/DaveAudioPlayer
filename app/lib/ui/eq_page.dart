@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
+import '../src/rust/api/library.dart' show uiSetting;
 import '../src/rust/api/player.dart' as rust;
+import 'playlists.dart' show promptPlaylistName;
 import 'widgets.dart';
 
 const _bands = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -32,17 +35,58 @@ class EqPage extends StatefulWidget {
   State<EqPage> createState() => _EqPageState();
 }
 
+/// Where the user's own presets are stored: JSON `{name: {"gains": [...], "preamp": x}}`.
+const _userPresetsKey = 'eq_user_presets';
+
 class _EqPageState extends State<EqPage> {
   List<double> _gains = List.filled(10, 0);
   double _preamp = 0;
   bool _enabled = false;
   bool _editing = false;
+  Map<String, (List<double>, double)> _user = {};
 
   @override
   void initState() {
     super.initState();
     widget.player.addListener(_sync);
     _sync();
+    _loadUserPresets();
+  }
+
+  Future<void> _loadUserPresets() async {
+    final raw = await uiSetting(key: _userPresetsKey);
+    if (raw == null || !mounted) return;
+    try {
+      final map = (jsonDecode(raw) as Map<String, dynamic>).map((name, v) {
+        final m = v as Map<String, dynamic>;
+        return MapEntry(name, (
+          [for (final g in m['gains'] as List) (g as num).toDouble()],
+          (m['preamp'] as num?)?.toDouble() ?? 0.0,
+        ));
+      });
+      setState(() => _user = map);
+    } on Object {
+      // A damaged value only loses the user presets, not the page.
+    }
+  }
+
+  void _storeUserPresets() {
+    final json = jsonEncode({
+      for (final e in _user.entries) e.key: {'gains': e.value.$1, 'preamp': e.value.$2},
+    });
+    rust.setUiSetting(key: _userPresetsKey, value: json);
+  }
+
+  Future<void> _saveUserPreset() async {
+    final name = await promptPlaylistName(context, title: 'Uložit preset', initial: _preset ?? '');
+    if (name == null || eqPresets.containsKey(name)) return;
+    setState(() => _user = {..._user, name: ([..._gains], _preamp)});
+    _storeUserPresets();
+  }
+
+  void _deleteUserPreset(String name) {
+    setState(() => _user = {..._user}..remove(name));
+    _storeUserPresets();
   }
 
   @override
@@ -78,9 +122,14 @@ class _EqPageState extends State<EqPage> {
     rust.setEqEnabled(enabled: on);
   }
 
+  bool _same(List<double> gains) => gains.indexed.every((p) => (p.$2 - _gains[p.$1]).abs() < .05);
+
   String? get _preset {
+    for (final e in _user.entries) {
+      if (_same(e.value.$1) && (e.value.$2 - _preamp).abs() < .05) return e.key;
+    }
     for (final e in eqPresets.entries) {
-      if (e.value.indexed.every((p) => (p.$2 - _gains[p.$1]).abs() < .05)) return e.key;
+      if (_same(e.value)) return e.key;
     }
     return null;
   }
@@ -118,6 +167,7 @@ class _EqPageState extends State<EqPage> {
                   const SizedBox(width: 8),
                   Text(_enabled ? 'Zapnuto' : 'Vypnuto', style: const TextStyle(fontWeight: FontWeight.w600)),
                   const Spacer(),
+                  TextButton(onPressed: _saveUserPreset, child: const Text('Uložit…')),
                   TextButton(onPressed: () => _apply(List.filled(10, 0), preamp: 0), child: const Text('Vynulovat')),
                 ],
               ),
@@ -131,6 +181,14 @@ class _EqPageState extends State<EqPage> {
                       label: Text(name),
                       selected: preset == name,
                       onSelected: (_) => _apply(eqPresets[name]!),
+                    ),
+                  for (final e in _user.entries)
+                    InputChip(
+                      label: Text(e.key),
+                      selected: preset == e.key,
+                      onSelected: (_) => _apply(e.value.$1, preamp: e.value.$2),
+                      onDeleted: () => _deleteUserPreset(e.key),
+                      deleteButtonTooltipMessage: 'Smazat preset',
                     ),
                 ],
               ),
