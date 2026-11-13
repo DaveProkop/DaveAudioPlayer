@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use dap_analysis::{KeyDetector, LoudnessMeter, TempoDetector};
+use dap_analysis::{Bounds, BoundsDetector, KeyDetector, LoudnessMeter, TempoDetector};
 use dap_audio_io::Decoder;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
@@ -23,8 +23,9 @@ use crate::db_writer::DbWriter;
 /// Rows from this version on hold a valid loudness measurement.
 pub const LOUDNESS_ALGO: i64 = 1;
 /// Bumped when the analysis changes; older rows are analyzed again. 2: adds the key,
-/// 3: key from spectral peaks only, 4: adds the tempo, 5: precise tempo and beat grid.
-pub const ANALYSIS_ALGO: i64 = 5;
+/// 3: key from spectral peaks only, 4: adds the tempo, 5: precise tempo and beat grid,
+/// 6: audible start and end, fade-outs.
+pub const ANALYSIS_ALGO: i64 = 6;
 /// Detected keys stay below the confidence that marks a key from tags.
 const MAX_DETECTED_KEY_CONFIDENCE: f64 = 0.99;
 /// How often an idle analyzer looks for new tracks (after a scan, for example).
@@ -50,6 +51,8 @@ struct Measured {
     tempo: Option<(f64, f64)>,
     /// Time of the first beat (the beat grid's anchor).
     first_beat_ms: Option<i64>,
+    /// Audible start and end, fade-out.
+    bounds: Option<Bounds>,
 }
 
 /// Stored loudness of a track; `None` when it has not been analyzed (by this algorithm).
@@ -159,14 +162,19 @@ impl Worker {
                     let (key, key_confidence) = m.key.unzip();
                     let (bpm, bpm_confidence) =
                         choose_bpm(self.tag_bpm(track_id), m.tempo).unzip();
+                    let ms = |s: f64| (s * 1000.0).round() as i64;
+                    let audio_start_ms = m.bounds.map(|b| ms(b.start_s));
+                    let audio_end_ms = m.bounds.map(|b| ms(b.end_s));
+                    let ends_with_fade = m.bounds.map(|b| b.fade_out);
                     let stored = self.db.call(move |c| {
                         // A key from tags (confidence 1) beats a detected one.
                         c.execute(
                             "INSERT INTO analysis (track_id, algo_version, loudness_lufs,
                                                    true_peak_db, key_camelot, key_confidence,
                                                    bpm, bpm_confidence, first_beat_ms,
-                                                   analyzed_at)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?10, ?9)
+                                                   analyzed_at, audio_start_ms, audio_end_ms,
+                                                   ends_with_fade)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?10, ?9, ?11, ?12, ?13)
                              ON CONFLICT (track_id) DO UPDATE SET
                                  algo_version = ?2, loudness_lufs = ?3, true_peak_db = ?4,
                                  key_camelot = CASE WHEN analysis.key_confidence >= 1.0
@@ -174,7 +182,8 @@ impl Worker {
                                  key_confidence = CASE WHEN analysis.key_confidence >= 1.0
                                      THEN analysis.key_confidence ELSE ?6 END,
                                  bpm = ?7, bpm_confidence = ?8, first_beat_ms = ?10,
-                                 analyzed_at = ?9",
+                                 analyzed_at = ?9, audio_start_ms = ?11, audio_end_ms = ?12,
+                                 ends_with_fade = ?13",
                             params![
                                 track_id,
                                 ANALYSIS_ALGO,
@@ -185,7 +194,10 @@ impl Worker {
                                 bpm,
                                 bpm_confidence,
                                 now_ms(),
-                                m.first_beat_ms
+                                m.first_beat_ms,
+                                audio_start_ms,
+                                audio_end_ms,
+                                ends_with_fade
                             ],
                         )
                     });
@@ -304,6 +316,7 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
     let mut meter = LoudnessMeter::new(info.sample_rate, info.channels).ok()?;
     let mut keys = KeyDetector::new(info.sample_rate, info.channels);
     let mut tempo = TempoDetector::new(info.sample_rate, info.channels);
+    let mut bounds = BoundsDetector::new(info.sample_rate, info.channels);
     loop {
         if cancel.load(Ordering::Relaxed) {
             return None;
@@ -313,6 +326,7 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
                 meter.push(chunk).ok()?;
                 keys.push(chunk);
                 tempo.push(chunk);
+                bounds.push(chunk);
             }
             Ok(None) => break,
             // What decoded before a damaged spot is still a fair measurement.
@@ -331,6 +345,7 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
             .map(|(k, c)| (k.camelot().to_string(), c.min(MAX_DETECTED_KEY_CONFIDENCE))),
         tempo: grid.map(|g| (g.bpm, g.confidence.min(MAX_DETECTED_KEY_CONFIDENCE))),
         first_beat_ms: grid.map(|g| (g.first_beat_s * 1000.0).round() as i64),
+        bounds: bounds.finish(),
     })
 }
 

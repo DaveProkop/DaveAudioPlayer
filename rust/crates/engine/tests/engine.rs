@@ -817,3 +817,50 @@ fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
         assert!(out[peak].abs() > 0.05, "beat {j}: no click ({})", out[peak]);
     }
 }
+
+#[test]
+fn crossfade_skips_trailing_and_leading_silence() {
+    let dir = TempDir::new("trim");
+    write_wav(&dir.music().join("a.wav"), 1, 5 * RATE);
+    write_wav(&dir.music().join("b.wav"), 2, 4 * RATE);
+    let id = scan(&dir);
+    {
+        // As if the analysis found: a's sound ends at 3 s, b's starts at 1 s.
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, start, end) in [("a.wav", 0, 3000), ("b.wav", 1000, 4000)] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, audio_start_ms, audio_end_ms,
+                                       analyzed_at)
+                 VALUES (?1, ?2, ?3, ?4, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, start, end],
+            )
+            .unwrap();
+        }
+    }
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    let out = captured_from_first_sound(&capture);
+    let r = RATE as usize;
+    let a = |i: usize| f32::from(sample(1, i as u32)) / 32768.0;
+    let b = |i: usize| f32::from(sample(2, i as u32)) / 32768.0;
+    // The fade runs from 2.5 s to a's end of sound at 3 s; b enters at its first sound.
+    assert_eq!(out[2 * r], a(2 * r));
+    let mid = 2 * r + r / 2 + r / 4;
+    let t = std::f64::consts::FRAC_PI_4;
+    let want = a(mid) * t.cos() as f32 + b(r + r / 4) * t.sin() as f32;
+    assert!((out[mid] - want).abs() < 1e-5, "{} vs {want}", out[mid]);
+    assert_eq!(out[3 * r], b(r + r / 2), "b alone after a's end of sound");
+    let total = 2 * r + r / 2 + 3 * r;
+    assert_eq!(out[total - 1], b(4 * r - 1), "b plays to its last frame");
+    assert!(out[total..].iter().all(|&s| s == 0.0));
+}

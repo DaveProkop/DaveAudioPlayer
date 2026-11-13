@@ -303,6 +303,11 @@ struct Loaded {
     beats: Option<Beats>,
     /// Set when the deck plays time-stretched (beatmatched into the previous one).
     stretch: Option<Stretched>,
+    /// Where the deck started in the track.
+    start_ms: u64,
+    /// Where a transition out of the track should end (silence and fade-out trimmed), in
+    /// source frames at the output rate.
+    audio_end: Option<u64>,
 }
 
 impl Loaded {
@@ -320,6 +325,16 @@ impl Loaded {
             Some(s) => s.plan.output_at(source - s.start as f64),
             None => source,
         }
+    }
+
+    /// Where a transition out of this deck ends, in deck output frames: the end of the
+    /// file, or earlier when the analysis found trailing silence or a fade-out.
+    fn mix_end(&self) -> Option<u64> {
+        let end = self.info.end_frame()?;
+        Some(match self.audio_end {
+            Some(a) => end.min(self.output_frame(a as f64).round() as u64),
+            None => end,
+        })
     }
 
     /// Source frames per output frame at deck output frame `out`.
@@ -743,6 +758,11 @@ impl Control {
                 continues_album,
                 beats: self.beats(entry.track_id),
                 stretch,
+                start_ms: stretch.map_or(start_ms, |s| s.start_ms),
+                audio_end: self
+                    .audio_bounds(entry.track_id)
+                    .1
+                    .map(|ms| ms * u64::from(self.sample_rate) / 1000),
             },
             input,
         )
@@ -776,14 +796,26 @@ impl Control {
             (Some(e), Some(current)) => self.beatmatch_for(current, e.track_id),
             _ => None,
         };
-        let have = self.next.as_ref().map(|l| (l.entry.id, l.stretch));
-        if want.map(|e| (e.id, stretch)) == have {
+        // A crossfaded track starts at its first sound, not in its leading silence.
+        let start_ms = match (want, self.current.as_ref()) {
+            (Some(e), Some(current))
+                if stretch.is_none()
+                    && self.settings.crossfade_ms > 0
+                    && !self.follows_on_album(current, e.track_id) =>
+            {
+                self.audio_bounds(e.track_id).0.unwrap_or(0)
+            }
+            _ => 0,
+        };
+        let start_ms = stretch.map_or(start_ms, |s| s.start_ms);
+        let have = self.next.as_ref().map(|l| (l.entry.id, l.stretch, l.start_ms));
+        if want.map(|e| (e.id, stretch, start_ms)) == have {
             return;
         }
         match want {
             Some(entry) if self.current.is_some() => {
                 let current = self.current.take();
-                let (loaded, input) = self.load(entry, 0, current.as_ref(), stretch);
+                let (loaded, input) = self.load(entry, start_ms, current.as_ref(), stretch);
                 self.current = current;
                 self.next = Some(loaded);
                 self.send_mixer(MixerCommand::SetNext(input));
@@ -795,6 +827,30 @@ impl Control {
             }
         }
         self.prioritize_analysis();
+    }
+
+    /// Whether `track_id` is the next track of `current`'s album (played gapless).
+    fn follows_on_album(&self, current: &Loaded, track_id: i64) -> bool {
+        match (current.album, self.album_pos(track_id)) {
+            (Some(prev), Some(next)) => prev.is_followed_by(next),
+            _ => false,
+        }
+    }
+
+    /// Audible start and transition end of a track (ms) from the stored analysis.
+    fn audio_bounds(&self, track_id: i64) -> (Option<u64>, Option<u64>) {
+        self.reader
+            .query_row(
+                "SELECT audio_start_ms, audio_end_ms FROM analysis WHERE track_id = ?1",
+                [track_id],
+                |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .map_or((None, None), |(a, b)| {
+                (a.map(|v| v.max(0) as u64), b.map(|v| v.max(0) as u64))
+            })
     }
 
     /// Beat grid of a track from the stored analysis.
@@ -823,9 +879,7 @@ impl Control {
             return None;
         }
         // Album tracks that follow each other stay gapless.
-        if let (Some(prev), Some(next)) = (current.album, self.album_pos(track_id))
-            && prev.is_followed_by(next)
-        {
+        if self.follows_on_album(current, track_id) {
             return None;
         }
         let out = current.beats?;
@@ -911,7 +965,7 @@ impl Control {
         if next.continues_album || current.info.failure.get().is_some() {
             return None;
         }
-        let end = current.info.end_frame()?;
+        let end = current.mix_end()?;
         if next.stretch.is_some()
             && let Some(plan) = self.beatmatch_plan(current, end)
         {
@@ -965,8 +1019,11 @@ impl Control {
                 && current.entry.track_id == track_id
             {
                 let beats = self.beats(track_id);
+                let rate = u64::from(self.sample_rate);
+                let audio_end = self.audio_bounds(track_id).1.map(|ms| ms * rate / 1000);
                 if let Some(current) = self.current.as_mut() {
                     current.beats = beats;
+                    current.audio_end = audio_end;
                 }
                 grids_changed = true;
             }

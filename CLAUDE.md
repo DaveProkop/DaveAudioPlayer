@@ -53,7 +53,8 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (
   nečíst ani nevypisovat. Stejným klíčem musí být podepsaná každá aktualizace.
 - Windows vyžaduje zapnutý Režim vývojáře (Flutter pluginy používají symlinky).
 - Konzolové nástroje: `cargo run -p dap-engine --example player -- <db> <složka>`,
-  `cargo run -p dap-library --example scan -- <db> <složka> [hledání]`
+  `cargo run -p dap-library --example scan -- <db> <složka> [hledání]`,
+  `cargo run --release -p dap-engine --example bounds_report -- <db> [počet]`
 
 ## Plánovaná struktura repozitáře
 ```
@@ -89,6 +90,8 @@ kompatibilní tóniny k právě hrané zvýrazněné.
 Tempo (BPM) z detekce/tagů (tag jen když souhlasí), Smart Mix řazení fronty (tónina + tempo,
 návrh s potvrzením). Beatmatch přechody (mřížka dob, time-stretch `dap-stretch`, nástup na
 dobu, prohození basů, návrat tempa; přepínač v nastavení).
+Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade-outu po poklesu
+o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.

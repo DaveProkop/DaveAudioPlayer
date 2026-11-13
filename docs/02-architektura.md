@@ -66,6 +66,17 @@ hladový průchod od hrané skladby + 2-opt. UI ukáže návrh s počtem plynul�
 předtím a potom, `ReorderUpcoming` ho použije (jen skladby za hranou, ověří, že se fronta
 nezměnila).
 
+## Skutečný začátek a konec skladby
+Analyzátor (verze 6, `dap_analysis::bounds`) měří obálku hlasitosti po 50 ms vůči hlasité
+úrovni skladby (95. percentil bloků). `audio_start_ms` = první blok nad −40 dB, konec zvuku =
+poslední blok nad −40 dB. Fade-out (`ends_with_fade`): od posledního kroku (0,5 s) nad −6 dB
+do konce zvuku aspoň 6 s, pokles aspoň o 20 dB a z 85 % kroků bez nárůstu. `audio_end_ms`
+je konec pro přechody: konec zvuku, u fade-outu bod, kde zeslábl o 20 dB. Přechod
+(crossfade i beatmatch) končí v `audio_end_ms` (mixer pak odcházející deck zahodí), další
+skladba s crossfadem začne od `audio_start_ms`. Navazující skladby alba a crossfade 0 se
+neořezávají. Kontrola na knihovně: `--example bounds_report -- <db> [počet]`, nebo
+`-- <soubor>` pro průběh hlasitosti po 5 s.
+
 ## Beatmatch přechody
 Analyzátor (verze 5) ukládá i mřížku dob: přesné BPM a `first_beat_ms` (fáze dob z basové
 obálky na začátku a konci skladby, perioda z počtu dob mezi nimi). Když mají sousední
