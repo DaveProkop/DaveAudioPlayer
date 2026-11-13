@@ -15,11 +15,13 @@ import 'package:daveaudioplayer/main.dart';
 import 'package:daveaudioplayer/player_controller.dart';
 import 'package:daveaudioplayer/src/rust/api/library.dart';
 import 'package:daveaudioplayer/src/rust/api/player.dart';
+import 'package:daveaudioplayer/src/rust/api/playlists.dart';
 import 'package:daveaudioplayer/src/rust/frb_generated.dart';
 import 'package:daveaudioplayer/ui/player.dart' show MiniPlayer;
 import 'package:daveaudioplayer/ui/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -204,6 +206,16 @@ void main() {
     await shot('desktop_settings');
     await tapText('Interpreti');
     await shot('desktop_artists');
+
+    // Playlists: one made from an album.
+    await tester.runAsync(() async {
+      final tracks = await _albumTracks(player, 'Letní noc');
+      await createPlaylist(name: 'Na večer', trackIds: Int64List.fromList([for (final t in tracks) t.id]));
+    });
+    await tapText('Playlisty');
+    await shot('desktop_playlists');
+    await tapText('Na večer');
+    await shot('desktop_playlist');
 
     // Smart Mix: the whole library in the queue, then the proposed order.
     await tester.runAsync(() async {

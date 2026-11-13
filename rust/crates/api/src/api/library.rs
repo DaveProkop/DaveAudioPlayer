@@ -95,7 +95,7 @@ pub(crate) fn close_reader() {
 }
 
 /// The covers folder of the running engine's database.
-fn current_covers_dir() -> Result<PathBuf> {
+pub(crate) fn current_covers_dir() -> Result<PathBuf> {
     DB_PATH
         .lock()
         .map_err(|_| anyhow!("lock poisoned"))?
@@ -104,7 +104,7 @@ fn current_covers_dir() -> Result<PathBuf> {
         .ok_or_else(|| anyhow!("engine is not running"))
 }
 
-fn with_reader<T>(f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Result<T> {
+pub(crate) fn with_reader<T>(f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Result<T> {
     let mut guard = READER.lock().map_err(|_| anyhow!("reader lock poisoned"))?;
     if guard.is_none() {
         let path = DB_PATH

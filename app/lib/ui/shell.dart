@@ -6,10 +6,10 @@ import '../player_controller.dart';
 import 'eq_page.dart';
 import 'library_pages.dart';
 import 'player.dart';
+import 'playlists.dart';
 import 'queue.dart';
 import 'settings_page.dart';
 import 'theme.dart';
-import 'widgets.dart';
 
 enum Section { tracks, albums, artists, playlists, nowPlaying, eq, settings }
 
@@ -83,7 +83,7 @@ class _AppShellState extends State<AppShell> {
     Section.tracks => TracksPage(player: player),
     Section.albums => AlbumsPage(player: player),
     Section.artists => ArtistsPage(player: player),
-    Section.playlists => const EmptyState(icon: Icons.queue_music, text: 'Playlisty přijdou v další verzi.'),
+    Section.playlists => PlaylistsPage(player: player),
     Section.nowPlaying => NowPlayingView(player: player),
     Section.eq => EqPage(player: player),
     Section.settings => SettingsPage(player: player, prefs: widget.prefs, onOpenEq: () => _select(Section.eq)),
@@ -266,7 +266,7 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-/// Mobile library: tracks, albums or artists, switched by chips.
+/// Mobile library: tracks, albums, artists or playlists, switched by chips.
 class _LibraryHome extends StatefulWidget {
   const _LibraryHome({required this.player});
 
@@ -286,7 +286,7 @@ class _LibraryHomeState extends State<_LibraryHome> {
       child: Wrap(
         spacing: 6,
         children: [
-          for (final (i, label) in const ['Skladby', 'Alba', 'Interpreti'].indexed)
+          for (final (i, label) in const ['Skladby', 'Alba', 'Interpreti', 'Playlisty'].indexed)
             ChoiceChip(label: Text(label), selected: _view == i, onSelected: (_) => setState(() => _view = i)),
         ],
       ),
@@ -294,6 +294,7 @@ class _LibraryHomeState extends State<_LibraryHome> {
     return switch (_view) {
       1 => AlbumsPage(player: widget.player, header: header),
       2 => ArtistsPage(player: widget.player, header: header),
+      3 => PlaylistsPage(player: widget.player, header: header),
       _ => TracksPage(player: widget.player, header: header),
     };
   }

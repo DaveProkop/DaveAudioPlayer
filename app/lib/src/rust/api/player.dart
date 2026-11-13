@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `epoch_ms`, `new`, `run_hub`, `send`, `state_dto`, `to_dto`, `track_meta`
+// These functions are ignored because they are not marked as `pub`: `epoch_ms`, `new`, `run_hub`, `send`, `state_dto`, `to_dto`, `track_meta`, `write`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
 
 /// Opens the library database (creating it if needed) and starts the audio engine on the

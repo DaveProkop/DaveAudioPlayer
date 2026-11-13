@@ -5,6 +5,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import '../src/rust/api/player.dart' as rust;
+import 'playlists.dart' show saveAsPlaylist;
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -50,6 +51,13 @@ class QueueView extends StatelessWidget {
                       onPressed: queue.length - (current ?? -1) - 1 < 2
                           ? null
                           : () => showMixSuggestion(context, player),
+                    ),
+                    IconButton(
+                      tooltip: 'Uložit frontu jako playlist',
+                      icon: const Icon(Icons.library_add_outlined),
+                      onPressed: queue.isEmpty
+                          ? null
+                          : () => saveAsPlaylist(context, player, [for (final q in queue) q.trackId]),
                     ),
                     IconButton(
                       tooltip: 'Vyprázdnit frontu',

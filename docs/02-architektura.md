@@ -221,3 +221,11 @@ události enginu do SMTC i do Dartu, tlačítka SMTC jdou do enginu jako běžn�
 `audio_service` Windows nepodporuje.
 
 **Obecně:** catch panic na hranici FFI, chyba dekódování = skip tracku.
+
+## Playlisty
+Ruční playlisty (`playlist`, `playlist_item` s pořadím REAL jako fronta; stejná skladba
+může být víckrát). Logika v `dap_library::playlists` (čisté funkce nad `Connection`).
+Zápisy z API jdou přes `Engine::db()` (klon `DbWriter`) na jediné zapisovací vlákno a API
+na ně čeká (`player::write`); `Engine::stop` svůj klon uvolní před čekáním na řídicí
+vlákno, jinak by zapisovač nikdy neskončil. Chytré playlisty (`kind = smart`, `rules`)
+a výchozí režim mixu playlistu (`mix_mode`) zatím ne.

@@ -9,6 +9,7 @@ import 'dart:typed_data' as td;
 
 import 'package:daveaudioplayer/src/rust/api/library.dart';
 import 'package:daveaudioplayer/src/rust/api/player.dart';
+import 'package:daveaudioplayer/src/rust/api/playlists.dart';
 import 'package:daveaudioplayer/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import 'package:flutter_test/flutter_test.dart';
@@ -108,6 +109,22 @@ void main() {
       final hits = await search(query: 'ton', limit: 10);
       expect(hits.map((t) => t.title), ['tone']);
       expect(hits.single.durationMs, inInclusiveRange(990, 1010));
+
+      step('playlists');
+      final tone = hits.single.id;
+      final pl = await createPlaylist(name: 'Test', trackIds: Int64List.fromList([tone, tone]));
+      var lists = await playlists();
+      expect(lists.map((p) => (p.name, p.trackCount)), [('Test', 2)]);
+      var entries = await playlistTracks(playlistId: pl);
+      expect(entries.map((e) => e.track.id), [tone, tone]);
+      await movePlaylistItem(itemId: entries[1].itemId, to: 0);
+      expect((await playlistTracks(playlistId: pl)).first.itemId, entries[1].itemId);
+      await removeFromPlaylist(itemIds: Int64List.fromList([entries[0].itemId]));
+      await renamePlaylist(playlistId: pl, name: 'Jiný');
+      lists = await playlists();
+      expect(lists.map((p) => (p.name, p.trackCount)), [('Jiný', 1)]);
+      await deletePlaylist(playlistId: pl);
+      expect(await playlists(), isEmpty);
       final t = hits.single;
       for (final cover in [t.coverSmall, t.coverMedium, t.coverLarge]) {
         expect(cover, isNotNull);

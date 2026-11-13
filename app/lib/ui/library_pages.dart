@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
+import 'playlists.dart' show showAddToPlaylist;
 import 'folder_picker.dart';
 import 'widgets.dart';
 
@@ -599,6 +600,11 @@ class DetailScroll extends StatelessWidget {
                   onPressed: tracks.isEmpty ? null : () => player.playNext(tracks),
                   icon: const Icon(Icons.queue_play_next),
                   label: const Text('Přehrát další'),
+                ),
+                IconButton(
+                  tooltip: 'Přidat do playlistu',
+                  onPressed: tracks.isEmpty ? null : () => showAddToPlaylist(context, player, tracks),
+                  icon: const Icon(Icons.library_add_outlined),
                 ),
               ],
             ),

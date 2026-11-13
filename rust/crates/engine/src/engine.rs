@@ -347,6 +347,7 @@ pub struct Engine {
     tx: Sender<Command>,
     events: Receiver<Event>,
     thread: Option<JoinHandle<()>>,
+    db: DbWriter,
 }
 
 impl Engine {
@@ -365,7 +366,7 @@ impl Engine {
                 .unwrap_or_else(|p| Err(format!("engine start panicked: {}", panic_message(&p))));
                 match started {
                     Ok(mut control) => {
-                        let _ = ready_tx.send(Ok(()));
+                        let _ = ready_tx.send(Ok(control.db.clone()));
                         control.run(rx);
                     }
                     Err(e) => {
@@ -375,10 +376,11 @@ impl Engine {
             })
             .map_err(|e| e.to_string())?;
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self {
+            Ok(Ok(db)) => Ok(Self {
                 tx,
                 events,
                 thread: Some(thread),
+                db,
             }),
             Ok(Err(e)) => {
                 let _ = thread.join();
@@ -386,6 +388,12 @@ impl Engine {
             }
             Err(_) => Err("engine thread died during startup".into()),
         }
+    }
+
+    /// The database writer, for library edits that do not concern playback (playlists).
+    /// Every write goes through it.
+    pub fn db(&self) -> &DbWriter {
+        &self.db
     }
 
     pub fn send(&self, cmd: Command) {
@@ -408,6 +416,9 @@ impl Engine {
 
     fn stop(&mut self) {
         if let Some(t) = self.thread.take() {
+            // The writer thread ends once every handle is gone; the control thread waits
+            // for it, so this one must go first.
+            self.db = DbWriter::closed();
             let _ = self.tx.send(Command::Shutdown);
             let _ = t.join();
         }

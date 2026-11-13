@@ -101,5 +101,6 @@ o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.
-Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,
-vlastní presety EQ.
+Playlisty (`dap_library::playlists`, zápisy přes `Engine::db()` na zapisovací vlákno;
+seznam, detail s přesouváním, přidání z menu skladby nebo alba, uložení fronty).
+Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: výběr výstupního zařízení, vlastní presety EQ.

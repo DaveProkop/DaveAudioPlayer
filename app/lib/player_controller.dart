@@ -28,8 +28,14 @@ class PlayerController extends ChangeNotifier {
   int analysisPending = 0;
   int analysisTotal = 0;
 
-  /// Increments when the library content changed (after a scan).
+  /// Increments when the library content changed (after a scan or an edit).
   int libraryVersion = 0;
+
+  /// Library views reload after an edit made here (playlists).
+  void libraryEdited() {
+    libraryVersion++;
+    notifyListeners();
+  }
 
   /// Last error or skipped-track message, for a snackbar.
   final messages = StreamController<String>.broadcast();

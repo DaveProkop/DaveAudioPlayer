@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
+import 'playlists.dart' show showAddToPlaylist;
 
 String formatMs(int? ms) {
   if (ms == null) return '–:––';
@@ -101,6 +102,7 @@ Future<void> showTrackActions(
     (Icons.play_arrow, 'Přehrát', () => player.playNow(track)),
     (Icons.queue_play_next, 'Přehrát další', () => player.playNext([track])),
     (Icons.playlist_add, 'Přidat do fronty', () => player.addToQueue([track])),
+    (Icons.library_add_outlined, 'Přidat do playlistu…', () => showAddToPlaylist(context, player, [track])),
     if (openAlbum != null) (Icons.album_outlined, 'Přejít na album', openAlbum),
   ];
   if (at != null) {

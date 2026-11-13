@@ -3,6 +3,7 @@
 pub mod catalog;
 pub mod covers;
 pub mod db;
+pub mod playlists;
 pub mod roots;
 pub mod scanner;
 pub mod search;

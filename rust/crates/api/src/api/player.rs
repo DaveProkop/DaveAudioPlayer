@@ -85,6 +85,22 @@ pub fn stop_engine() {
     }
 }
 
+/// Runs `job` on the database writer thread and waits for it.
+pub(crate) fn write<T: Send + 'static>(
+    job: impl FnOnce(&mut rusqlite::Connection) -> T + Send + 'static,
+) -> Result<T> {
+    let db = {
+        let guard = ENGINE.lock().map_err(|_| anyhow!("engine lock poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or_else(|| anyhow!("engine is not running"))?
+            .engine
+            .db()
+            .clone()
+    };
+    db.call(job).ok_or_else(|| anyhow!("database writer is gone"))
+}
+
 fn send(cmd: Command) -> Result<()> {
     let guard = ENGINE.lock().map_err(|_| anyhow!("engine lock poisoned"))?;
     guard

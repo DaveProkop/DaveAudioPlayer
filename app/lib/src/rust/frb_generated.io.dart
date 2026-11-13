@@ -5,6 +5,7 @@
 
 import 'api/library.dart';
 import 'api/player.dart';
+import 'api/playlists.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -104,6 +105,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FolderInfo> dco_decode_list_folder_info(dynamic raw);
 
   @protected
+  List<PlaylistInfo> dco_decode_list_playlist_info(dynamic raw);
+
+  @protected
+  List<PlaylistTrack> dco_decode_list_playlist_track(dynamic raw);
+
+  @protected
   List<double> dco_decode_list_prim_f_64_loose(dynamic raw);
 
   @protected
@@ -175,6 +182,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayerStateDto dco_decode_player_state_dto(dynamic raw);
+
+  @protected
+  PlaylistInfo dco_decode_playlist_info(dynamic raw);
+
+  @protected
+  PlaylistTrack dco_decode_playlist_track(dynamic raw);
 
   @protected
   QueueItemDto dco_decode_queue_item_dto(dynamic raw);
@@ -299,6 +312,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FolderInfo> sse_decode_list_folder_info(SseDeserializer deserializer);
 
   @protected
+  List<PlaylistInfo> sse_decode_list_playlist_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PlaylistTrack> sse_decode_list_playlist_track(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer);
 
   @protected
@@ -386,6 +409,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayerStateDto sse_decode_player_state_dto(SseDeserializer deserializer);
+
+  @protected
+  PlaylistInfo sse_decode_playlist_info(SseDeserializer deserializer);
+
+  @protected
+  PlaylistTrack sse_decode_playlist_track(SseDeserializer deserializer);
 
   @protected
   QueueItemDto sse_decode_queue_item_dto(SseDeserializer deserializer);
@@ -537,6 +566,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_playlist_info(
+    List<PlaylistInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_playlist_track(
+    List<PlaylistTrack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_f_64_loose(
     List<double> self,
     SseSerializer serializer,
@@ -655,6 +696,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     PlayerStateDto self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_playlist_info(PlaylistInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_playlist_track(PlaylistTrack self, SseSerializer serializer);
 
   @protected
   void sse_encode_queue_item_dto(QueueItemDto self, SseSerializer serializer);
