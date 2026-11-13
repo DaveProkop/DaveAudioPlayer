@@ -54,7 +54,8 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (
 - Windows vyžaduje zapnutý Režim vývojáře (Flutter pluginy používají symlinky).
 - Konzolové nástroje: `cargo run -p dap-engine --example player -- <db> <složka>`,
   `cargo run -p dap-library --example scan -- <db> <složka> [hledání]`,
-  `cargo run --release -p dap-engine --example bounds_report -- <db> [počet]`
+  `cargo run --release -p dap-engine --example bounds_report -- <db> [počet]`,
+  `cargo run --release -p dap-engine --example energy_report -- <db> [počet] [každá n-tá]`
 
 ## Plánovaná struktura repozitáře
 ```
@@ -90,8 +91,9 @@ kompatibilní tóniny k právě hrané zvýrazněné.
 Tempo (BPM) z detekce/tagů (tag jen když souhlasí), Smart Mix řazení fronty (tónina + tempo,
 návrh s potvrzením). Beatmatch přechody (mřížka dob, time-stretch `dap-stretch`, nástup na
 dobu, prohození basů, návrat tempa). Chytré přechody podle páru skladeb: beatmatch,
-filter sweep (jiné tempo), echo out (jiné tempo i tónina), jinak crossfade; přepínač
-v nastavení.
+filter sweep (jiné tempo), echo out (jiné tempo i tónina), tvrdý střih (dvě energické
+skladby), jinak crossfade; přepínač v nastavení. Energie skladby (hlasitost + tempo) ve
+štítku a v řazení fronty. Náhled přechodu (typ, odpočet, skok 10 s před mix).
 Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade-outu po poklesu
 o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),

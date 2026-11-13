@@ -83,6 +83,8 @@ pub struct TrackDetails {
     pub key_from_tag: bool,
     pub bpm: Option<f64>,
     pub bpm_from_tag: bool,
+    /// Energy 0–1, from loudness and tempo (once the loudness is measured).
+    pub energy: Option<f64>,
 }
 
 /// Closes the read connection (on engine stop, so the database file is released).
@@ -405,7 +407,10 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
              WHERE t.id = ?1",
             [track_id],
             |r| {
+                let lufs: Option<f64> = r.get(5)?;
+                let bpm: Option<f64> = r.get(8)?;
                 Ok(TrackDetails {
+                    energy: lufs.map(|l| dap_analysis::track_energy(l, bpm)),
                     format: r.get(0)?,
                     sample_rate: r.get(1)?,
                     bit_depth: r.get(2)?,
@@ -424,7 +429,7 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
 }
 
 /// Smart Mix: an order for the upcoming queue items (`item_ids`, playing `track_ids` in
-/// the same order) where each track mixes well into the next by key and tempo, starting
+/// the same order) where each track mixes well into the next by key, tempo and energy, starting
 /// after `after_track` (the playing one). Returns the item ids in the proposed order.
 pub fn suggest_mix_order(
     after_track: Option<i64>,
@@ -433,17 +438,18 @@ pub fn suggest_mix_order(
 ) -> Result<Vec<i64>> {
     use dap_analysis::{Camelot, MixTrack, mix_order};
     let info = |c: &Connection, id: i64| -> rusqlite::Result<MixTrack> {
-        let row: Option<(Option<String>, Option<f64>)> = c
+        let row: Option<(Option<String>, Option<f64>, Option<f64>)> = c
             .query_row(
-                "SELECT key_camelot, bpm FROM analysis WHERE track_id = ?1",
+                "SELECT key_camelot, bpm, loudness_lufs FROM analysis WHERE track_id = ?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let (key, bpm) = row.unwrap_or_default();
+        let (key, bpm, lufs) = row.unwrap_or_default();
         Ok(MixTrack {
             key: key.as_deref().and_then(Camelot::parse),
             bpm,
+            energy: lufs.map(|l| dap_analysis::track_energy(l, bpm)),
         })
     };
     let (start, tracks) = with_reader(|c| {

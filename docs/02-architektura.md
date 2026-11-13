@@ -77,10 +77,20 @@ skladba s crossfadem začne od `audio_start_ms`. Navazující skladby alba a cro
 neořezávají. Kontrola na knihovně: `--example bounds_report -- <db> [počet]`, nebo
 `-- <soubor>` pro průběh hlasitosti po 5 s.
 
+## Energie
+`dap_analysis::track_energy` (0–1) = 0,6 × hlasitost (−16…−7 LUFS) + 0,4 × tempo
+(80…140 BPM, neznámé = střed). Počítá se při čtení z uloženého `loudness_lufs` a `bpm`,
+bez nové analýzy. Jas a hustota transientů (údernost celkově i basů) byly zkoušené na
+knihovně a balady od tanečních skladeb neoddělily (`--example energy_report`). Slabina:
+staré tiché mastery vycházejí méně energické. Použití: řazení fronty (cena skoku 1 bod za
+0,15, max. 3, neznámá energie nic nestojí), tvrdý střih, štítek „Energie N/10“.
+
 ## Výběr typu přechodu
 Při nahrání dalšího decku (`incoming_for`, nastavení `player.smart_transitions`, jen se
 zapnutým crossfadem, ne navazující skladby alba) řídicí vlákno zvolí `Mix`:
 - tempo do 8 % → **beatmatch** (níže),
+- obě skladby energické (≥ 0,75) → **tvrdý střih** na poslední hranici 16dobé fráze
+  odcházející (10 ms prolnutí), příchozí nahraná od své první doby,
 - jiné tempo, kompatibilní nebo neznámá tónina → **filter sweep**: délka podle crossfadu,
   stejné výkonové křivky, odcházející přes high-pass 20 Hz → 2 kHz, příchozí přes low-pass
   250 Hz → 18 kHz (exponenciálně, koeficienty každých 32 snímků),

@@ -1,5 +1,5 @@
 //! Smart Mix ordering: puts tracks in an order where each one mixes well into the next,
-//! by key (Camelot wheel) and tempo.
+//! by key (Camelot wheel), tempo and energy.
 
 use crate::key::Camelot;
 
@@ -8,6 +8,8 @@ use crate::key::Camelot;
 pub struct MixTrack {
     pub key: Option<Camelot>,
     pub bpm: Option<f64>,
+    /// Energy 0–1 ([`crate::track_energy`]).
+    pub energy: Option<f64>,
 }
 
 /// Cost of an unknown key or tempo: about as bad as a mediocre match.
@@ -46,8 +48,17 @@ pub fn tempo_cost(a: Option<f64>, b: Option<f64>) -> f64 {
     (gap / 0.03).min(4.0)
 }
 
+/// Energy part of a transition's cost: 1 unit per 0.15 jump, capped; nothing when unknown
+/// (the energy is a soft preference, key and tempo matter more).
+pub fn energy_cost(a: Option<f64>, b: Option<f64>) -> f64 {
+    match (a, b) {
+        (Some(a), Some(b)) => ((a - b).abs() / 0.15).min(3.0),
+        _ => 0.0,
+    }
+}
+
 pub fn transition_cost(a: &MixTrack, b: &MixTrack) -> f64 {
-    key_cost(a.key, b.key) + tempo_cost(a.bpm, b.bpm)
+    key_cost(a.key, b.key) + tempo_cost(a.bpm, b.bpm) + energy_cost(a.energy, b.energy)
 }
 
 fn path_cost(start: Option<&MixTrack>, tracks: &[MixTrack], order: &[usize]) -> f64 {
@@ -129,7 +140,21 @@ mod tests {
         MixTrack {
             key: Camelot::parse(key),
             bpm: Some(bpm),
+            energy: None,
         }
+    }
+
+    #[test]
+    fn energy_jumps_cost_but_unknown_energy_does_not() {
+        assert_eq!(energy_cost(Some(0.8), Some(0.8)), 0.0);
+        assert!((energy_cost(Some(0.8), Some(0.5)) - 2.0).abs() < 1e-9);
+        assert_eq!(energy_cost(Some(0.9), Some(0.1)), 3.0);
+        assert_eq!(energy_cost(None, Some(0.5)), 0.0);
+        // Same key and tempo: the closer energy goes next.
+        let start = MixTrack { energy: Some(0.9), ..t("8A", 128.0) };
+        let calm = MixTrack { energy: Some(0.3), ..t("8A", 128.0) };
+        let hot = MixTrack { energy: Some(0.85), ..t("8A", 128.0) };
+        assert_eq!(mix_order(Some(&start), &[calm, hot]), [1, 0]);
     }
 
     #[test]

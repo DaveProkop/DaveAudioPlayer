@@ -2161,6 +2161,7 @@ impl SseDecode for crate::api::library::TrackDetails {
         let mut var_keyFromTag = <bool>::sse_decode(deserializer);
         let mut var_bpm = <Option<f64>>::sse_decode(deserializer);
         let mut var_bpmFromTag = <bool>::sse_decode(deserializer);
+        let mut var_energy = <Option<f64>>::sse_decode(deserializer);
         return crate::api::library::TrackDetails {
             format: var_format,
             sample_rate: var_sampleRate,
@@ -2172,6 +2173,7 @@ impl SseDecode for crate::api::library::TrackDetails {
             key_from_tag: var_keyFromTag,
             bpm: var_bpm,
             bpm_from_tag: var_bpmFromTag,
+            energy: var_energy,
         };
     }
 }
@@ -2232,6 +2234,7 @@ impl SseDecode for crate::api::player::TransitionKindDto {
             2 => crate::api::player::TransitionKindDto::Beatmatch,
             3 => crate::api::player::TransitionKindDto::FilterSweep,
             4 => crate::api::player::TransitionKindDto::EchoOut,
+            5 => crate::api::player::TransitionKindDto::HardCut,
             _ => unreachable!("Invalid variant for TransitionKindDto: {}", inner),
         };
     }
@@ -2627,6 +2630,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::library::TrackDetails {
             self.key_from_tag.into_into_dart().into_dart(),
             self.bpm.into_into_dart().into_dart(),
             self.bpm_from_tag.into_into_dart().into_dart(),
+            self.energy.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2704,6 +2708,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::TransitionKindDto {
             Self::Beatmatch => 2.into_dart(),
             Self::FilterSweep => 3.into_dart(),
             Self::EchoOut => 4.into_dart(),
+            Self::HardCut => 5.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -3138,6 +3143,7 @@ impl SseEncode for crate::api::library::TrackDetails {
         <bool>::sse_encode(self.key_from_tag, serializer);
         <Option<f64>>::sse_encode(self.bpm, serializer);
         <bool>::sse_encode(self.bpm_from_tag, serializer);
+        <Option<f64>>::sse_encode(self.energy, serializer);
     }
 }
 
@@ -3178,6 +3184,7 @@ impl SseEncode for crate::api::player::TransitionKindDto {
                 crate::api::player::TransitionKindDto::Beatmatch => 2,
                 crate::api::player::TransitionKindDto::FilterSweep => 3,
                 crate::api::player::TransitionKindDto::EchoOut => 4,
+                crate::api::player::TransitionKindDto::HardCut => 5,
                 _ => {
                     unimplemented!("");
                 }

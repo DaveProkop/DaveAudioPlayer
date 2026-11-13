@@ -115,9 +115,9 @@ class SettingsPage extends StatelessWidget {
                     SwitchListTile(
                       title: const Text('Chytré přechody'),
                       subtitle: const Text(
-                        'Podobné tempo: beatmatch (nástup na dobu, prohození basů). Jiné tempo: přechod '
-                        'filtrem. Jiné tempo i nesourodá tónina: echo na poslední době. Bez změřeného '
-                        'tempa obyčejné prolnutí.',
+                        'Podobné tempo: beatmatch (nástup na dobu, prohození basů). Dvě energické '
+                        'skladby s jiným tempem: střih na dobu. Jinak přechod filtrem, a když nesedí ani '
+                        'tónina, echo na poslední době. Bez změřeného tempa obyčejné prolnutí.',
                       ),
                       value: s?.smartTransitions ?? true,
                       onChanged: s == null || (s.crossfadeMs == 0) ? null : (v) => rust.setSmartTransitions(enabled: v),

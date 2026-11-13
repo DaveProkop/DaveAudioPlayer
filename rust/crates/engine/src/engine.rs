@@ -64,6 +64,10 @@ const PHRASE_BEATS: i64 = 16;
 const BAR_BEATS: i64 = 4;
 /// An echo out lasts the outgoing track's last beat plus four beats of echoes.
 const ECHO_BEATS: u64 = 5;
+/// Both tracks at least this energetic (0–1) and not beatmatchable: a hard cut.
+const HARD_CUT_ENERGY: f64 = 0.75;
+/// A hard cut crossfades this long, just enough to avoid a click.
+const HARD_CUT_MS: u64 = 10;
 
 pub struct EngineConfig {
     pub db_path: PathBuf,
@@ -170,6 +174,7 @@ pub enum TransitionKind {
     Beatmatch,
     FilterSweep,
     EchoOut,
+    HardCut,
 }
 
 /// Playback preferences, stored in the database.
@@ -383,6 +388,9 @@ enum Mix {
     /// Different tempo and clashing keys: the outgoing track echoes out on a beat and the
     /// incoming one starts one beat before its first beat, so that beat lands cleanly.
     EchoOut,
+    /// Two energetic tracks of different tempo: a cut on a phrase boundary straight into
+    /// the incoming track's first beat.
+    HardCut,
 }
 
 /// How the next deck is loaded.
@@ -712,6 +720,7 @@ impl Control {
                     TransitionShape::Beatmatch { .. } => TransitionKind::Beatmatch,
                     TransitionShape::FilterSweep => TransitionKind::FilterSweep,
                     TransitionShape::EchoOut { .. } => TransitionKind::EchoOut,
+                    TransitionShape::Cut => TransitionKind::HardCut,
                 },
                 start_ms: ms(plan.start_frame),
             },
@@ -930,12 +939,20 @@ impl Control {
         let (Some(out), Some(inc)) = (current.beats, self.beats(track_id)) else {
             return plain;
         };
+        let rate = f64::from(self.sample_rate);
+        let hot = |id: i64| self.energy(id).is_some_and(|e| e >= HARD_CUT_ENERGY);
+        if hot(current.entry.track_id) && hot(track_id) {
+            return Incoming {
+                mix: Mix::HardCut,
+                start_ms: (inc.first * 1000.0 / rate).round() as u64,
+                stretch: None,
+            };
+        }
         let clash = match (current.key, self.key(track_id)) {
             (Some(a), Some(b)) => !a.compatible(b),
             _ => false,
         };
         if clash {
-            let rate = f64::from(self.sample_rate);
             let start = (inc.first - out.period).max(0.0);
             Incoming {
                 mix: Mix::EchoOut,
@@ -948,6 +965,21 @@ impl Control {
                 ..plain
             }
         }
+    }
+
+    /// Energy 0–1 of a track from its stored loudness and tempo.
+    fn energy(&self, track_id: i64) -> Option<f64> {
+        let (lufs, bpm): (Option<f64>, Option<f64>) = self
+            .reader
+            .query_row(
+                "SELECT loudness_lufs, bpm FROM analysis WHERE track_id = ?1",
+                [track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()?;
+        Some(dap_analysis::track_energy(lufs?, bpm))
     }
 
     /// Key of a track from the stored analysis (or its tags).
@@ -1131,6 +1163,10 @@ impl Control {
         let beat_plan = match next.mix {
             Mix::Beatmatch => self.beatmatch_plan(current, end),
             Mix::EchoOut => self.echo_plan(current, end),
+            Mix::HardCut => {
+                let len = HARD_CUT_MS * u64::from(self.sample_rate) / 1000;
+                self.beat_aligned_plan(current, end, len, PHRASE_BEATS, TransitionShape::Cut)
+            }
             Mix::Crossfade | Mix::FilterSweep => None,
         };
         if beat_plan.is_some() {

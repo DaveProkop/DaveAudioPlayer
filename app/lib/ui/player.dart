@@ -483,6 +483,7 @@ class NowPlayingView extends StatelessWidget {
           if (details?.bpm != null)
             '${details!.bpm!.toStringAsFixed(1).replaceAll('.', ',')} BPM · ${details.bpmFromTag ? 'z tagu' : 'odhad'}',
           if (details?.key != null) 'Tónina ${details!.key} · ${details.keyFromTag ? 'z tagu' : 'odhad'}',
+          if (details?.energy != null) 'Energie ${(details!.energy! * 10).round()}/10',
           if (s?.eqEnabled ?? false) 'EQ zapnutý',
         ];
         final info = Column(
@@ -674,6 +675,7 @@ class _TransitionLine extends StatelessWidget {
       rust.TransitionKindDto.beatmatch => 'beatmatch – srovnání do rytmu',
       rust.TransitionKindDto.filterSweep => 'přechod filtrem',
       rust.TransitionKindDto.echoOut => 'echo na poslední době',
+      rust.TransitionKindDto.hardCut => 'střih na dobu',
       rust.TransitionKindDto.crossfade => 'prolnutí ${((s?.crossfadeMs ?? 0) / 1000).round()} s',
       rust.TransitionKindDto.gapless => gapless ? 'bez mezery – další skladba alba' : 'bez mezery',
       null =>

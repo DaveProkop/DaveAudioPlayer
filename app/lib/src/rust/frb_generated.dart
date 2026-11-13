@@ -1916,8 +1916,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TrackDetails dco_decode_track_details(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return TrackDetails(
       format: dco_decode_String(arr[0]),
       sampleRate: dco_decode_opt_box_autoadd_u_32(arr[1]),
@@ -1929,6 +1929,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       keyFromTag: dco_decode_bool(arr[7]),
       bpm: dco_decode_opt_box_autoadd_f_64(arr[8]),
       bpmFromTag: dco_decode_bool(arr[9]),
+      energy: dco_decode_opt_box_autoadd_f_64(arr[10]),
     );
   }
 
@@ -2558,6 +2559,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_keyFromTag = sse_decode_bool(deserializer);
     var var_bpm = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_bpmFromTag = sse_decode_bool(deserializer);
+    var var_energy = sse_decode_opt_box_autoadd_f_64(deserializer);
     return TrackDetails(
       format: var_format,
       sampleRate: var_sampleRate,
@@ -2569,6 +2571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       keyFromTag: var_keyFromTag,
       bpm: var_bpm,
       bpmFromTag: var_bpmFromTag,
+      energy: var_energy,
     );
   }
 
@@ -3161,6 +3164,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.keyFromTag, serializer);
     sse_encode_opt_box_autoadd_f_64(self.bpm, serializer);
     sse_encode_bool(self.bpmFromTag, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.energy, serializer);
   }
 
   @protected

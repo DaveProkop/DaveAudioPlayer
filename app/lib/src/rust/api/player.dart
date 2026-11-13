@@ -80,8 +80,9 @@ Future<void> setNormalization({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetNormalization(enabled: enabled);
 
 /// Smart transitions (with crossfade on), chosen per pair of tracks: beatmatch for similar
-/// tempos, a filter sweep for different tempos, an echo out when the keys clash too;
-/// tracks without an analyzed tempo are crossfaded.
+/// tempos, a hard cut on the beat between two energetic tracks, a filter sweep for
+/// different tempos, an echo out when the keys clash too; tracks without an analyzed tempo
+/// are crossfaded.
 Future<void> setSmartTransitions({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetSmartTransitions(enabled: enabled);
 
@@ -382,4 +383,11 @@ class TransitionDto {
           startMs == other.startMs;
 }
 
-enum TransitionKindDto { gapless, crossfade, beatmatch, filterSweep, echoOut }
+enum TransitionKindDto {
+  gapless,
+  crossfade,
+  beatmatch,
+  filterSweep,
+  echoOut,
+  hardCut,
+}

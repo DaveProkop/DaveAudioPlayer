@@ -185,8 +185,9 @@ pub fn set_normalization(enabled: bool) -> Result<()> {
 }
 
 /// Smart transitions (with crossfade on), chosen per pair of tracks: beatmatch for similar
-/// tempos, a filter sweep for different tempos, an echo out when the keys clash too;
-/// tracks without an analyzed tempo are crossfaded.
+/// tempos, a hard cut on the beat between two energetic tracks, a filter sweep for
+/// different tempos, an echo out when the keys clash too; tracks without an analyzed tempo
+/// are crossfaded.
 pub fn set_smart_transitions(enabled: bool) -> Result<()> {
     send(Command::SetSmartTransitions(enabled))
 }
@@ -322,6 +323,7 @@ pub enum TransitionKindDto {
     Beatmatch,
     FilterSweep,
     EchoOut,
+    HardCut,
 }
 
 pub struct QueueItemDto {
@@ -426,6 +428,7 @@ fn state_dto(s: PlayerState) -> PlayerStateDto {
                 TransitionKind::Beatmatch => TransitionKindDto::Beatmatch,
                 TransitionKind::FilterSweep => TransitionKindDto::FilterSweep,
                 TransitionKind::EchoOut => TransitionKindDto::EchoOut,
+                TransitionKind::HardCut => TransitionKindDto::HardCut,
             },
             start_ms: t.start_ms as i64,
         }),

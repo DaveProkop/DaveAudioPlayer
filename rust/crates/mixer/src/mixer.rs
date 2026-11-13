@@ -76,6 +76,8 @@ pub enum TransitionShape {
     /// Equal-power crossfade over the whole transition.
     #[default]
     Crossfade,
+    /// A cut on the beat: an equal-power crossfade just long enough to avoid a click.
+    Cut,
     /// DJ style, for beat-matched decks: the incoming deck fades in without bass, the
     /// basses swap at `swap` frames into the transition (a bar line), then the outgoing
     /// deck fades out.
@@ -400,7 +402,7 @@ impl Mixer {
         outgoing.filter_state = [BiquadState::default(); MAX_CHANNELS];
         next.filter_state = [BiquadState::default(); MAX_CHANNELS];
         match plan.shape {
-            TransitionShape::Crossfade => {}
+            TransitionShape::Crossfade | TransitionShape::Cut => {}
             TransitionShape::Beatmatch { .. } => {
                 // The incoming deck starts without bass; the basses swap mid-transition.
                 outgoing.bass.set_immediate(1.0);
@@ -455,7 +457,7 @@ impl Mixer {
                 let pos = fade.pos + j as u64;
                 let mut wet = [0.0f32; MAX_CHANNELS];
                 let (fade_in, fade_out) = match fade.shape {
-                    TransitionShape::Crossfade => {
+                    TransitionShape::Crossfade | TransitionShape::Cut => {
                         let t = pos as f64 / fade.len as f64 * half_pi;
                         (t.sin(), t.cos())
                     }

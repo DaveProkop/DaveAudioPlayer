@@ -939,3 +939,61 @@ fn clashing_tempo_and_key_echo_out_and_the_next_track_lands_on_the_beat() {
     let dry = out[peak_near(&out, 30.0 * beat, b_beat * rate / 2.0)].abs();
     assert!(echo < dry * 0.6, "echo {echo} vs dry {dry}");
 }
+
+#[test]
+fn two_energetic_tracks_of_different_tempo_cut_on_the_phrase() {
+    let dir = TempDir::new("cut");
+    write_clicks(&dir.music().join("a.wav"), 20.0, (0..40).map(|k| 0.25 + 0.5 * k as f64));
+    let b_beat = 60.0 / 140.0;
+    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.8 + b_beat * k as f64));
+    let id = scan(&dir);
+    {
+        // Loud masters at 120 and 140 BPM: both energetic, too far apart to beatmatch.
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, bpm, first) in [("a.wav", 120.0, 250), ("b.wav", 140.0, 800)] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
+                                       first_beat_ms, loudness_lufs, analyzed_at)
+                 VALUES (?1, ?2, ?3, 1.0, ?4, -7.0, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first],
+            )
+            .unwrap();
+        }
+    }
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    let events = play_to_the_end(&engine);
+    engine.shutdown();
+
+    // The cut comes on a's last phrase boundary: beat 32, 16.25 s into the file.
+    let announced = events.iter().find_map(|e| match e {
+        Event::State(s) => s.transition.filter(|t| t.kind == TransitionKind::HardCut),
+        _ => None,
+    });
+    assert_eq!(announced.map(|t| t.start_ms), Some(16_250), "{announced:?}");
+
+    // Index 0 = a's first beat; b's first beat lands right on the cut.
+    let out = captured_from_first_sound(&capture);
+    let rate = f64::from(RATE);
+    let cut = 32.0 * rate / 2.0;
+    let tolerance = rate * 0.005;
+    for j in 1..3 {
+        let expected = cut + j as f64 * b_beat * rate;
+        let peak = peak_near(&out, expected, b_beat * rate);
+        assert!(
+            (peak as f64 - expected).abs() < tolerance && out[peak].abs() > 0.3,
+            "b beat {j}: click at {peak} ({}), expected {expected}",
+            out[peak]
+        );
+    }
+    // a is gone after the cut: nothing on its beat 34.
+    let at_a = out[peak_near(&out, 34.0 * rate / 2.0, b_beat * rate / 2.0)].abs();
+    assert!(at_a < 0.01, "a still playing: {at_a}");
+}

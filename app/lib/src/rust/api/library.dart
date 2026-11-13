@@ -63,7 +63,7 @@ Future<TrackDetails?> trackDetails({required PlatformInt64 trackId}) =>
     RustLib.instance.api.crateApiLibraryTrackDetails(trackId: trackId);
 
 /// Smart Mix: an order for the upcoming queue items (`item_ids`, playing `track_ids` in
-/// the same order) where each track mixes well into the next by key and tempo, starting
+/// the same order) where each track mixes well into the next by key, tempo and energy, starting
 /// after `after_track` (the playing one). Returns the item ids in the proposed order.
 Future<Int64List> suggestMixOrder({
   PlatformInt64? afterTrack,
@@ -249,6 +249,9 @@ class TrackDetails {
   final double? bpm;
   final bool bpmFromTag;
 
+  /// Energy 0–1, from loudness and tempo (once the loudness is measured).
+  final double? energy;
+
   const TrackDetails({
     required this.format,
     this.sampleRate,
@@ -260,6 +263,7 @@ class TrackDetails {
     required this.keyFromTag,
     this.bpm,
     required this.bpmFromTag,
+    this.energy,
   });
 
   @override
@@ -273,7 +277,8 @@ class TrackDetails {
       key.hashCode ^
       keyFromTag.hashCode ^
       bpm.hashCode ^
-      bpmFromTag.hashCode;
+      bpmFromTag.hashCode ^
+      energy.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -289,7 +294,8 @@ class TrackDetails {
           key == other.key &&
           keyFromTag == other.keyFromTag &&
           bpm == other.bpm &&
-          bpmFromTag == other.bpmFromTag;
+          bpmFromTag == other.bpmFromTag &&
+          energy == other.energy;
 }
 
 class TrackInfo {
