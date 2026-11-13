@@ -1455,8 +1455,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AppEvent dco_decode_app_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return AppEvent(
       kind: dco_decode_app_event_kind(arr[0]),
       state: dco_decode_opt_box_autoadd_player_state_dto(arr[1]),
@@ -1468,6 +1468,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scanProcessed: dco_decode_opt_box_autoadd_u_32(arr[7]),
       scanTotal: dco_decode_opt_box_autoadd_u_32(arr[8]),
       scanSummary: dco_decode_opt_box_autoadd_scan_summary_dto(arr[9]),
+      analysisPending: dco_decode_opt_box_autoadd_u_32(arr[10]),
+      analysisTotal: dco_decode_opt_box_autoadd_u_32(arr[11]),
     );
   }
 
@@ -1912,6 +1914,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scanSummary = sse_decode_opt_box_autoadd_scan_summary_dto(
       deserializer,
     );
+    var var_analysisPending = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_analysisTotal = sse_decode_opt_box_autoadd_u_32(deserializer);
     return AppEvent(
       kind: var_kind,
       state: var_state,
@@ -1923,6 +1927,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scanProcessed: var_scanProcessed,
       scanTotal: var_scanTotal,
       scanSummary: var_scanSummary,
+      analysisPending: var_analysisPending,
+      analysisTotal: var_analysisTotal,
     );
   }
 
@@ -2501,6 +2507,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.scanProcessed, serializer);
     sse_encode_opt_box_autoadd_u_32(self.scanTotal, serializer);
     sse_encode_opt_box_autoadd_scan_summary_dto(self.scanSummary, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.analysisPending, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.analysisTotal, serializer);
   }
 
   @protected

@@ -92,6 +92,10 @@ class _TracksPageState extends State<TracksPage> {
   static const _page = 200;
   final _pages = <int, List<TrackInfo>>{};
   final _loading = <int>{};
+
+  /// Pages from before a refresh, shown until their fresh copy arrives (no flicker while
+  /// the analysis adds keys).
+  var _stale = <int, List<TrackInfo>>{};
   int? _count;
   LibraryStats? _stats;
   int _version = -1;
@@ -123,6 +127,7 @@ class _TracksPageState extends State<TracksPage> {
 
   Future<void> _reload() async {
     _version = player.libraryVersion;
+    _stale = {..._stale, ..._pages};
     _pages.clear();
     _loading.clear();
     try {
@@ -142,20 +147,24 @@ class _TracksPageState extends State<TracksPage> {
     final page = i ~/ _page;
     final rows = _pages[page];
     if (rows != null) return i % _page < rows.length ? rows[i % _page] : null;
+    final old = _stale[page];
     if (_loading.add(page)) {
       final version = _version;
       libraryPage(offset: page * _page, limit: _page).then(
         (rows) {
           if (!mounted || version != _version) return;
           player.remember(rows);
-          setState(() => _pages[page] = rows);
+          setState(() {
+            _pages[page] = rows;
+            _stale.remove(page);
+          });
         },
         onError: (_) {
           _loading.remove(page);
         },
       );
     }
-    return null;
+    return old != null && i % _page < old.length ? old[i % _page] : null;
   }
 
   void _search(String q) {

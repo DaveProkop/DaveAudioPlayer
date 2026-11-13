@@ -124,6 +124,10 @@ class AppEvent {
   final int? scanTotal;
   final ScanSummaryDto? scanSummary;
 
+  /// AnalysisProgress: tracks still waiting for analysis, of all tracks.
+  final int? analysisPending;
+  final int? analysisTotal;
+
   const AppEvent({
     required this.kind,
     this.state,
@@ -135,6 +139,8 @@ class AppEvent {
     this.scanProcessed,
     this.scanTotal,
     this.scanSummary,
+    this.analysisPending,
+    this.analysisTotal,
   });
 
   @override
@@ -148,7 +154,9 @@ class AppEvent {
       scanFolder.hashCode ^
       scanProcessed.hashCode ^
       scanTotal.hashCode ^
-      scanSummary.hashCode;
+      scanSummary.hashCode ^
+      analysisPending.hashCode ^
+      analysisTotal.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -164,7 +172,9 @@ class AppEvent {
           scanFolder == other.scanFolder &&
           scanProcessed == other.scanProcessed &&
           scanTotal == other.scanTotal &&
-          scanSummary == other.scanSummary;
+          scanSummary == other.scanSummary &&
+          analysisPending == other.analysisPending &&
+          analysisTotal == other.analysisTotal;
 }
 
 enum AppEventKind {
@@ -176,6 +186,7 @@ enum AppEventKind {
   scanProgress,
   scanFinished,
   libraryChanged,
+  analysisProgress,
 }
 
 enum PlayStatus { stopped, playing, paused }

@@ -27,7 +27,7 @@ use dap_library::{
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::analyzer::{Analyzer, stored_loudness};
+use crate::analyzer::{ANALYSIS_ALGO, Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
 use crate::deck::{DeckInfo, spawn_deck};
 use crate::output::{self, Output, OutputConfig};
@@ -51,6 +51,8 @@ const DUCK_GAIN: f32 = 0.3;
 
 pub const DEFAULT_CROSSFADE_MS: u32 = 6000;
 pub const MAX_CROSSFADE_MS: u32 = 12_000;
+/// How often analysis progress is reported while results come in.
+const ANALYSIS_REPORT_EVERY: Duration = Duration::from_secs(4);
 /// Shorter fades than this are not worth it: the tracks just follow each other.
 const MIN_FADE_MS: u64 = 10;
 
@@ -169,6 +171,9 @@ pub enum Event {
     ScanFinished(ScanSummary),
     /// The library changed outside a scan (a folder was removed); views should refresh.
     LibraryChanged,
+    /// Background analysis progress (key, loudness): tracks still waiting, of all tracks.
+    /// Sent every few seconds while results come in; library views refresh on it.
+    AnalysisProgress { pending: usize, total: usize },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -327,6 +332,9 @@ struct Control {
     covers: PathBuf,
     settings: PlayerSettings,
     ducked: bool,
+    /// Analysis results arrived since the last progress event.
+    analysis_dirty: bool,
+    analysis_reported: Instant,
     /// The transition plan last sent to the mixer.
     plan_sent: Option<TransitionPlan>,
 }
@@ -450,6 +458,9 @@ impl Control {
             covers: dap_library::covers::covers_dir(&config.db_path),
             settings,
             ducked: false,
+            // Report once right after start, so the UI knows what is left.
+            analysis_dirty: true,
+            analysis_reported: Instant::now() - ANALYSIS_REPORT_EVERY,
             plan_sent: None,
         };
         let mut control = control;
@@ -776,6 +787,14 @@ impl Control {
             return;
         };
         let done: Vec<i64> = analyzer.done.try_iter().collect();
+        self.analysis_dirty |= !done.is_empty();
+        if self.analysis_dirty && self.analysis_reported.elapsed() >= ANALYSIS_REPORT_EVERY {
+            self.analysis_dirty = false;
+            self.analysis_reported = Instant::now();
+            if let Some((pending, total)) = self.analysis_counts() {
+                self.emit(Event::AnalysisProgress { pending, total });
+            }
+        }
         for track_id in done {
             let Some(next) = self.next.as_ref() else {
                 continue;
@@ -791,6 +810,20 @@ impl Control {
             }
             self.send_mixer(MixerCommand::SetDeckGain { token, gain });
         }
+    }
+
+    fn analysis_counts(&self) -> Option<(usize, usize)> {
+        self.reader
+            .query_row(
+                "SELECT count(*),
+                        sum(a.track_id IS NULL OR a.algo_version < ?1)
+                 FROM track t JOIN file f ON f.id = t.file_id
+                 LEFT JOIN analysis a ON a.track_id = t.id
+                 WHERE f.missing = 0",
+                [ANALYSIS_ALGO],
+                |r| Ok((r.get::<_, i64>(1).unwrap_or(0) as usize, r.get::<_, i64>(0)? as usize)),
+            )
+            .ok()
     }
 
     /// Changed library folders are rescanned (incrementally).

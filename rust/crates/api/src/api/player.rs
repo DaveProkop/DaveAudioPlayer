@@ -327,6 +327,7 @@ pub enum AppEventKind {
     ScanProgress,
     ScanFinished,
     LibraryChanged,
+    AnalysisProgress,
 }
 
 /// One event from the engine; `kind` says which fields are set.
@@ -341,6 +342,9 @@ pub struct AppEvent {
     pub scan_processed: Option<u32>,
     pub scan_total: Option<u32>,
     pub scan_summary: Option<ScanSummaryDto>,
+    /// AnalysisProgress: tracks still waiting for analysis, of all tracks.
+    pub analysis_pending: Option<u32>,
+    pub analysis_total: Option<u32>,
 }
 
 impl AppEvent {
@@ -356,6 +360,8 @@ impl AppEvent {
             scan_processed: None,
             scan_total: None,
             scan_summary: None,
+            analysis_pending: None,
+            analysis_total: None,
         }
     }
 }
@@ -432,6 +438,11 @@ fn to_dto(event: Event) -> AppEvent {
             ..AppEvent::new(AppEventKind::ScanProgress)
         },
         Event::LibraryChanged => AppEvent::new(AppEventKind::LibraryChanged),
+        Event::AnalysisProgress { pending, total } => AppEvent {
+            analysis_pending: Some(pending as u32),
+            analysis_total: Some(total as u32),
+            ..AppEvent::new(AppEventKind::AnalysisProgress)
+        },
         Event::ScanFinished(s) => AppEvent {
             scan_summary: Some(ScanSummaryDto {
                 added: s.added as u32,

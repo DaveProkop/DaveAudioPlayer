@@ -398,7 +398,33 @@ class _SideNav extends StatelessWidget {
           ListenableBuilder(
             listenable: player,
             builder: (context, _) {
-              if (!player.scanning) return const SizedBox.shrink();
+              if (!player.scanning) {
+                if (player.analysisPending == 0 || player.analysisTotal == 0) return const SizedBox.shrink();
+                final done = player.analysisTotal - player.analysisPending;
+                return Tooltip(
+                  message: 'Tónina a hlasitost se měří na pozadí',
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Analyzuji knihovnu…', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                        Text('$done / ${player.analysisTotal}', style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(
+                          value: done / player.analysisTotal,
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
               final folder = player.scanFolder?.split(RegExp(r'[\\/]')).where((p) => p.isNotEmpty).lastOrNull ?? '';
               return Container(
                 padding: const EdgeInsets.all(10),

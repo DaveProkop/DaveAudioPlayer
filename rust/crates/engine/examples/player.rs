@@ -168,7 +168,7 @@ fn main() {
                         println!("skipped {}: {error}", track_label(&labels, track_id));
                     }
                     Ok(Event::Error(e)) => println!("error: {e}"),
-                    Ok(Event::ScanProgress { .. } | Event::LibraryChanged) => {}
+                    Ok(Event::ScanProgress { .. } | Event::LibraryChanged | Event::AnalysisProgress { .. }) => {}
                     Ok(Event::ScanFinished(s)) => println!("scan finished: {s:?}"),
                     Err(_) => break,
                 }

@@ -24,6 +24,10 @@ class PlayerController extends ChangeNotifier {
   int scanProcessed = 0;
   int scanTotal = 0;
 
+  /// Background analysis (key, loudness): tracks still waiting, of all tracks.
+  int analysisPending = 0;
+  int analysisTotal = 0;
+
   /// Increments when the library content changed (after a scan).
   int libraryVersion = 0;
 
@@ -117,6 +121,11 @@ class PlayerController extends ChangeNotifier {
       case AppEventKind.error:
         messages.add('Chyba: ${e.message ?? ''}');
       case AppEventKind.libraryChanged:
+        libraryVersion++;
+      case AppEventKind.analysisProgress:
+        analysisPending = e.analysisPending ?? 0;
+        analysisTotal = e.analysisTotal ?? 0;
+        // New keys and loudness values: library views fetch their rows again.
         libraryVersion++;
       case AppEventKind.scanProgress:
         scanning = true;

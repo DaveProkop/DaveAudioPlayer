@@ -1583,6 +1583,8 @@ impl SseDecode for crate::api::player::AppEvent {
         let mut var_scanTotal = <Option<u32>>::sse_decode(deserializer);
         let mut var_scanSummary =
             <Option<crate::api::player::ScanSummaryDto>>::sse_decode(deserializer);
+        let mut var_analysisPending = <Option<u32>>::sse_decode(deserializer);
+        let mut var_analysisTotal = <Option<u32>>::sse_decode(deserializer);
         return crate::api::player::AppEvent {
             kind: var_kind,
             state: var_state,
@@ -1594,6 +1596,8 @@ impl SseDecode for crate::api::player::AppEvent {
             scan_processed: var_scanProcessed,
             scan_total: var_scanTotal,
             scan_summary: var_scanSummary,
+            analysis_pending: var_analysisPending,
+            analysis_total: var_analysisTotal,
         };
     }
 }
@@ -1611,6 +1615,7 @@ impl SseDecode for crate::api::player::AppEventKind {
             5 => crate::api::player::AppEventKind::ScanProgress,
             6 => crate::api::player::AppEventKind::ScanFinished,
             7 => crate::api::player::AppEventKind::LibraryChanged,
+            8 => crate::api::player::AppEventKind::AnalysisProgress,
             _ => unreachable!("Invalid variant for AppEventKind: {}", inner),
         };
     }
@@ -2205,6 +2210,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::AppEvent {
             self.scan_processed.into_into_dart().into_dart(),
             self.scan_total.into_into_dart().into_dart(),
             self.scan_summary.into_into_dart().into_dart(),
+            self.analysis_pending.into_into_dart().into_dart(),
+            self.analysis_total.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2229,6 +2236,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::AppEventKind {
             Self::ScanProgress => 5.into_dart(),
             Self::ScanFinished => 6.into_dart(),
             Self::LibraryChanged => 7.into_dart(),
+            Self::AnalysisProgress => 8.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -2546,6 +2554,8 @@ impl SseEncode for crate::api::player::AppEvent {
         <Option<u32>>::sse_encode(self.scan_processed, serializer);
         <Option<u32>>::sse_encode(self.scan_total, serializer);
         <Option<crate::api::player::ScanSummaryDto>>::sse_encode(self.scan_summary, serializer);
+        <Option<u32>>::sse_encode(self.analysis_pending, serializer);
+        <Option<u32>>::sse_encode(self.analysis_total, serializer);
     }
 }
 
@@ -2562,6 +2572,7 @@ impl SseEncode for crate::api::player::AppEventKind {
                 crate::api::player::AppEventKind::ScanProgress => 5,
                 crate::api::player::AppEventKind::ScanFinished => 6,
                 crate::api::player::AppEventKind::LibraryChanged => 7,
+                crate::api::player::AppEventKind::AnalysisProgress => 8,
                 _ => {
                     unimplemented!("");
                 }
