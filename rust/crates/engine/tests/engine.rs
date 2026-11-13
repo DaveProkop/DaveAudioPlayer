@@ -1216,3 +1216,37 @@ fn next_early_in_a_track_counts_as_a_skip() {
         .unwrap();
     assert_eq!((skips, history), (1, 1));
 }
+
+#[test]
+fn finished_plays_are_queued_for_scrobbling_once_a_token_is_set() {
+    let dir = TempDir::new("scrobble");
+    write_wav(&dir.music().join("a.wav"), 1, RATE / 2);
+    write_wav(&dir.music().join("b.wav"), 2, RATE / 2);
+    let id = scan(&dir);
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        conn.execute(
+            "INSERT INTO setting (key, value) VALUES ('scrobble.listenbrainz_token', 'abc')",
+            [],
+        )
+        .unwrap();
+    }
+    let engine = start(&dir, None);
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+    let conn = open_writer(&dir.db()).unwrap();
+    let queued: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM scrobble s JOIN play_history h ON h.id = s.history_id
+             WHERE s.service = 'listenbrainz' AND s.status = 'pending' AND h.completed = 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(queued, 2);
+}

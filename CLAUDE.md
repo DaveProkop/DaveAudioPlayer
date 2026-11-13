@@ -104,6 +104,9 @@ Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na
 Chytré playlisty (`dap_library::smart`: pravidla JSON v `playlist.rules`, jen povolená pole,
 hodnoty jako SQL parametry), hodnocení 0–5 hvězd (`track.rating` = 2×), přeskočení
 (Next v 1. polovině → `skip_count` + `play_history.skipped`), stránka Statistiky.
+Scrobbling na ListenBrainz (token v `scrobble.listenbrainz_token`, engine řadí dohrané do
+`scrobble`, vlákno `scrobbler` v API posílá po 50, opakuje; před vypnutím enginu se zastaví).
+Last.fm a AcoustID čekají na registraci aplikace (API klíče).
 Obaly alb online: MusicBrainz (hledání vydání, 1 dotaz/s) + Cover Art Archive (front-500),
 u alba bez obalu tlačítko, hromadně v nastavení; miss 30 dní (`metadata_cache` 'caa').
 Ruční úprava údajů skladby (`catalog::edit_track`: změněná pole do `tag_edit` → zamčená

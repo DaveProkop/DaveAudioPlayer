@@ -25,6 +25,7 @@ struct Running {
     /// Engine events after the hub, for [`app_events`].
     events: Receiver<Event>,
     hub: Option<JoinHandle<()>>,
+    scrobbler: Option<JoinHandle<()>>,
 }
 
 static ENGINE: Mutex<Option<Running>> = Mutex::new(None);
@@ -59,10 +60,12 @@ pub fn start_engine(db_path: String) -> Result<()> {
             .name("event-hub".into())
             .spawn(move || run_hub(input, out, commands, &db))?
     };
+    let scrobbler = super::scrobble::start(path.clone(), engine.db().clone());
     *guard = Some(Running {
         engine,
         events,
         hub: Some(hub),
+        scrobbler,
     });
     *DB_PATH.lock().map_err(|_| anyhow!("lock poisoned"))? = Some(path);
     Ok(())
@@ -72,6 +75,11 @@ pub fn start_engine(db_path: String) -> Result<()> {
 pub fn stop_engine() {
     if let Ok(mut guard) = ENGINE.lock() {
         if let Some(mut running) = guard.take() {
+            // The scrobbler holds a database writer handle: it goes before the engine.
+            super::scrobble::stop();
+            if let Some(s) = running.scrobbler.take() {
+                let _ = s.join();
+            }
             running.engine.shutdown();
             // The engine's event channel is closed now, so the hub finishes.
             if let Some(hub) = running.hub.take() {

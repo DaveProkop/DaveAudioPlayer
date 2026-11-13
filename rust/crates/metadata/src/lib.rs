@@ -5,6 +5,7 @@
 
 pub mod http;
 pub mod lrc;
+pub mod listenbrainz;
 pub mod lrclib;
 pub mod musicbrainz;
 

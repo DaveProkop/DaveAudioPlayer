@@ -1725,6 +1725,14 @@ impl Control {
                  VALUES (?1, ?2, ?3, 1, 0, ?4)",
                 params![track_id, now - played, played, device],
             );
+            // Queued for ListenBrainz when a token is set (sent by the API's scrobbler).
+            let _ = c.execute(
+                "INSERT INTO scrobble (history_id, service, status)
+                 SELECT last_insert_rowid(), 'listenbrainz', 'pending'
+                 WHERE EXISTS (SELECT 1 FROM setting
+                               WHERE key = 'scrobble.listenbrainz_token' AND value != '')",
+                [],
+            );
         });
     }
 

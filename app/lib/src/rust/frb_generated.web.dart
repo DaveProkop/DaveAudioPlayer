@@ -10,6 +10,7 @@ import 'api/library.dart';
 import 'api/metadata.dart';
 import 'api/player.dart';
 import 'api/playlists.dart';
+import 'api/scrobble.dart';
 import 'api/stats.dart';
 
 import 'dart:async';
@@ -249,6 +250,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanSummaryDto dco_decode_scan_summary_dto(dynamic raw);
+
+  @protected
+  ScrobbleStatus dco_decode_scrobble_status(dynamic raw);
 
   @protected
   TopItem dco_decode_top_item(dynamic raw);
@@ -542,6 +546,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanSummaryDto sse_decode_scan_summary_dto(SseDeserializer deserializer);
+
+  @protected
+  ScrobbleStatus sse_decode_scrobble_status(SseDeserializer deserializer);
 
   @protected
   TopItem sse_decode_top_item(SseDeserializer deserializer);
@@ -911,6 +918,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_scan_summary_dto(
     ScanSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scrobble_status(
+    ScrobbleStatus self,
     SseSerializer serializer,
   );
 

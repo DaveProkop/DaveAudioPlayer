@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import '../src/rust/api/metadata.dart';
+import '../src/rust/api/scrobble.dart';
 import '../src/rust/api/player.dart' as rust;
 import 'folder_picker.dart';
 import 'library_pages.dart' show LibraryFuture;
@@ -123,6 +124,7 @@ class SettingsPage extends StatelessWidget {
                         onChanged: s == null ? null : (v) => rust.setNormalization(enabled: v),
                       ),
                     ),
+                    const _ListenBrainzTile(),
                     ListTile(
                       title: const Text('Statistiky poslechu'),
                       subtitle: const Text('Nejhranější skladby, interpreti a žánry, poslech po dnech'),
@@ -402,6 +404,101 @@ class _FillCoversDialogState extends State<_FillCoversDialog> {
         else
           FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Hotovo')),
       ],
+    );
+  }
+}
+
+/// Scrobbling to ListenBrainz: the state of the queue, and the token.
+class _ListenBrainzTile extends StatefulWidget {
+  const _ListenBrainzTile();
+
+  @override
+  State<_ListenBrainzTile> createState() => _ListenBrainzTileState();
+}
+
+class _ListenBrainzTileState extends State<_ListenBrainzTile> {
+  late Future<ScrobbleStatus> _status = scrobbleStatus();
+
+  void _reload() => setState(() {
+    _status = scrobbleStatus();
+  });
+
+  Future<void> _edit(bool configured) async {
+    final controller = TextEditingController();
+    final token = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('ListenBrainz'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Dohrané skladby se budou posílat na tvůj profil ListenBrainz. '
+              'Token najdeš po přihlášení na listenbrainz.org v Settings → User token.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'User token', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          if (configured)
+            TextButton(onPressed: () => Navigator.of(dialog).pop(''), child: const Text('Odpojit')),
+          TextButton(onPressed: () => Navigator.of(dialog).pop(), child: const Text('Zrušit')),
+          FilledButton(onPressed: () => Navigator.of(dialog).pop(controller.text), child: const Text('Uložit')),
+        ],
+      ),
+    );
+    if (token == null || !mounted) return;
+    try {
+      final user = await setListenbrainzToken(token: token);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(user == null ? 'ListenBrainz odpojen' : 'Připojeno jako $user')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Token se nepodařilo ověřit: $e')));
+    }
+    _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<ScrobbleStatus>(
+      future: _status,
+      builder: (context, snap) {
+        final s = snap.data;
+        final configured = s?.configured ?? false;
+        final subtitle = !configured
+            ? 'Posílat přehrané skladby na ListenBrainz (vypnuto)'
+            : [
+                'Odesláno ${s!.sent}',
+                if (s.pending > 0) 'čeká ${s.pending}',
+                if (s.lastError != null) 'naposledy chyba: ${s.lastError}',
+              ].join(' · ');
+        return ListTile(
+          title: const Text('Scrobbling (ListenBrainz)'),
+          subtitle: Text(subtitle),
+          trailing: configured && (s?.pending ?? 0) > 0
+              ? IconButton(
+                  tooltip: 'Odeslat teď',
+                  onPressed: () async {
+                    await scrobbleNow();
+                    await Future<void>.delayed(const Duration(seconds: 2));
+                    _reload();
+                  },
+                  icon: const Icon(Icons.send),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: s == null ? null : () => _edit(configured),
+        );
+      },
     );
   }
 }
