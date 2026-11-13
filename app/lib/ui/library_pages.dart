@@ -51,7 +51,10 @@ class _LibraryFutureState<T> extends State<LibraryFuture<T>> {
   void _changed() {
     if (widget.player.libraryVersion != _version) {
       _version = widget.player.libraryVersion;
-      setState(() => _future = widget.load());
+      // A block body: an arrow would return the Future, which setState rejects.
+      setState(() {
+        _future = widget.load();
+      });
     }
   }
 
