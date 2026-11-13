@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'background_analysis.dart';
 import 'media_session.dart';
 import 'platform.dart';
 import 'player_controller.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
     final dir = await AppPlatform.dataDir();
     await controller.start('$dir/library.db');
     await prefs.load();
+    BackgroundAnalysis(prefs).start();
     await MediaSession.start(controller);
   } catch (e) {
     startupError = e.toString();

@@ -40,6 +40,11 @@ Future<void> setVolume({required double volume}) =>
 Future<void> duck({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerDuck(enabled: enabled);
 
+/// Analyze the whole library in the background, not only queued tracks (on Android the
+/// app turns this on while the phone charges).
+Future<void> setBackgroundAnalysis({required bool enabled}) =>
+    RustLib.instance.api.crateApiPlayerSetBackgroundAnalysis(enabled: enabled);
+
 /// Stores a UI preference (read back with `ui_setting`).
 Future<void> setUiSetting({required String key, required String value}) =>
     RustLib.instance.api.crateApiPlayerSetUiSetting(key: key, value: value);

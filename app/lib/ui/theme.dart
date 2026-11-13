@@ -97,6 +97,9 @@ class UiPrefs extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.dark;
   bool coverAccent = true;
 
+  /// Android: analyze the whole library (key, loudness) while the phone charges.
+  bool analyzeOnCharge = true;
+
   Future<void> load() async {
     try {
       themeMode = switch (await uiSetting(key: 'theme')) {
@@ -105,6 +108,7 @@ class UiPrefs extends ChangeNotifier {
         _ => ThemeMode.dark,
       };
       coverAccent = await uiSetting(key: 'cover_accent') != 'false';
+      analyzeOnCharge = await uiSetting(key: 'analyze_on_charge') != 'false';
     } catch (_) {
       // Engine not running: defaults.
     }
@@ -115,6 +119,12 @@ class UiPrefs extends ChangeNotifier {
     themeMode = m;
     notifyListeners();
     rust.setUiSetting(key: 'theme', value: m.name);
+  }
+
+  void setAnalyzeOnCharge(bool on) {
+    analyzeOnCharge = on;
+    notifyListeners();
+    rust.setUiSetting(key: 'analyze_on_charge', value: '$on');
   }
 
   void setCoverAccent(bool on) {

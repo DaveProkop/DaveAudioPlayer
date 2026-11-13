@@ -28,7 +28,9 @@ pub const ANALYSIS_ALGO: i64 = 2;
 const MAX_DETECTED_KEY_CONFIDENCE: f64 = 0.99;
 /// How often an idle analyzer looks for new tracks (after a scan, for example).
 const IDLE_POLL: Duration = Duration::from_secs(10);
-const BACKGROUND: bool = !cfg!(target_os = "android");
+/// Whether the rest of the library is analyzed in the background by default. Android
+/// starts with queued tracks only; the app turns the rest on while charging.
+const BACKGROUND_DEFAULT: bool = !cfg!(target_os = "android");
 
 /// Loudness of a track as stored, `None` values when unknown.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -67,6 +69,7 @@ pub struct Analyzer {
     priority: Arc<Mutex<Vec<i64>>>,
     wake: Sender<()>,
     cancel: Arc<AtomicBool>,
+    background: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     /// Track ids whose analysis was just stored.
     pub done: Receiver<i64>,
@@ -77,6 +80,7 @@ impl Analyzer {
         let reader = open_reader(db_path).map_err(|e| e.to_string())?;
         let priority = Arc::new(Mutex::new(Vec::new()));
         let cancel = Arc::new(AtomicBool::new(false));
+        let background = Arc::new(AtomicBool::new(BACKGROUND_DEFAULT));
         let (wake, woken) = bounded(1);
         let (done_tx, done) = unbounded();
         let worker = Worker {
@@ -84,6 +88,7 @@ impl Analyzer {
             db,
             priority: priority.clone(),
             cancel: cancel.clone(),
+            background: background.clone(),
             done: done_tx,
         };
         let thread = std::thread::Builder::new()
@@ -94,9 +99,16 @@ impl Analyzer {
             priority,
             wake,
             cancel,
+            background,
             thread: Some(thread),
             done,
         })
+    }
+
+    /// Analyze the whole library, not only the prioritized tracks.
+    pub fn set_background(&self, on: bool) {
+        self.background.store(on, Ordering::Relaxed);
+        let _ = self.wake.try_send(());
     }
 
     /// Tracks to analyze first, in order (replaces the previous list).
@@ -123,6 +135,7 @@ struct Worker {
     db: DbWriter,
     priority: Arc<Mutex<Vec<i64>>>,
     cancel: Arc<AtomicBool>,
+    background: Arc<AtomicBool>,
     done: Sender<i64>,
 }
 
@@ -193,7 +206,7 @@ impl Worker {
                 return Some((id, path));
             }
         }
-        if !BACKGROUND {
+        if !self.background.load(Ordering::Relaxed) {
             return None;
         }
         let id: i64 = self

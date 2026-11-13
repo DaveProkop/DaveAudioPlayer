@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
@@ -123,6 +125,15 @@ class SettingsPage extends StatelessWidget {
                         onChanged: s == null ? null : (v) => rust.setNormalization(enabled: v),
                       ),
                     ),
+                    if (Platform.isAndroid)
+                      SwitchListTile(
+                        title: const Text('Analyzovat celou knihovnu při nabíjení'),
+                        subtitle: const Text(
+                          'Tónina a hlasitost pro všechny skladby. Bez nabíjení se měří jen skladby ve frontě.',
+                        ),
+                        value: prefs.analyzeOnCharge,
+                        onChanged: prefs.setAnalyzeOnCharge,
+                      ),
                     ListTile(
                       title: const Text('Ekvalizér'),
                       subtitle: Text((s?.eqEnabled ?? false) ? 'Zapnutý' : 'Vypnutý'),

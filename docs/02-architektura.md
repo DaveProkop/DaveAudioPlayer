@@ -53,7 +53,8 @@ kompatibilní tónina = stejné číslo, ±1 se stejným písmenem, nebo stejné
 ## Vyrovnání hlasitosti
 Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true
 peak do tabulky `analysis` (`algo_version` = 1). Přednost má fronta za aktuální skladbou; na PC
-pak na pozadí zbytek knihovny, na Androidu jen skladby ve frontě (baterie). Zesílení decku =
+pak na pozadí zbytek knihovny; na Androidu jen skladby ve frontě, celá knihovna jen při nabíjení
+(přepínač v Nastavení, stav nabíjení posílá `MainActivity` přes EventChannel). Zesílení decku =
 −18 LUFS − hlasitost, omezené tak, aby true peak nepřesáhl −1 dBTP (bez limiteru), rozsah
 −24…+12 dB. Neanalyzovaná skladba se bere jako −14 LUFS (−4 dB). Když analýza doběhne pro
 přednačtený deck, který ještě nehraje, zesílení se mu plynule upraví; hrající skladba se nemění.

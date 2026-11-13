@@ -88,6 +88,9 @@ pub enum Command {
     SetVolume(f32),
     /// Temporarily lowers the output (audio focus ducking); not stored.
     Duck(bool),
+    /// Analyze the whole library in the background (Android: while charging), not only
+    /// the queue.
+    SetBackgroundAnalysis(bool),
     SetEq {
         gains_db: [f32; BAND_COUNT],
         preamp_db: f32,
@@ -986,6 +989,11 @@ impl Control {
                 self.apply_volume();
                 self.save_setting(SETTING_VOLUME, v.to_string());
                 self.emit(Event::Settings(self.settings));
+            }
+            Command::SetBackgroundAnalysis(on) => {
+                if let Some(a) = &self.analyzer {
+                    a.set_background(on);
+                }
             }
             Command::Duck(on) => {
                 self.ducked = on;

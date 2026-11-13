@@ -130,6 +130,12 @@ pub fn duck(enabled: bool) -> Result<()> {
     send(Command::Duck(enabled))
 }
 
+/// Analyze the whole library in the background, not only queued tracks (on Android the
+/// app turns this on while the phone charges).
+pub fn set_background_analysis(enabled: bool) -> Result<()> {
+    send(Command::SetBackgroundAnalysis(enabled))
+}
+
 /// Stores a UI preference (read back with `ui_setting`).
 pub fn set_ui_setting(key: String, value: String) -> Result<()> {
     send(Command::SetUiSetting { key, value })

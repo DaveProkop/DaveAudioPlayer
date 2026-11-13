@@ -39,6 +39,15 @@ class AppPlatform {
     return roots.isEmpty ? const ['/storage/emulated/0'] : roots;
   }
 
+  /// Android: whether the phone is plugged in, now and on every change.
+  static Stream<bool> charging() {
+    if (!Platform.isAndroid) return const Stream.empty();
+    return const EventChannel('cz.daveprokop.daveaudioplayer/platform/charging')
+        .receiveBroadcastStream()
+        .map((e) => e == true)
+        .distinct();
+  }
+
   /// Asks for READ_MEDIA_AUDIO (Android 13+) or READ_EXTERNAL_STORAGE. True when granted.
   static Future<bool> ensureAudioPermission() async {
     if (!Platform.isAndroid) return true;

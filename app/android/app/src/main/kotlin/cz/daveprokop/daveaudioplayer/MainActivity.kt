@@ -1,7 +1,11 @@
 package cz.daveprokop.daveaudioplayer
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -9,6 +13,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 /**
@@ -41,6 +46,8 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "$channelName/charging")
+            .setStreamHandler(ChargingStream(applicationContext))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "filesDir" -> result.success(filesDir.absolutePath)
@@ -107,6 +114,28 @@ class MainActivity : AudioServiceActivity() {
         // A file directly in the volume root counts for the root itself.
         val take = if (parts.size == rootParts + 1) rootParts else rootParts + 1
         return "/" + parts.take(take).joinToString("/")
+    }
+
+    /** Streams whether the phone is plugged in (the app analyzes the library then). */
+    private class ChargingStream(private val context: Context) : EventChannel.StreamHandler {
+        private var receiver: BroadcastReceiver? = null
+
+        override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
+            val r = object : BroadcastReceiver() {
+                override fun onReceive(c: Context, intent: Intent) {
+                    sink.success(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0)
+                }
+            }
+            receiver = r
+            // A system broadcast, so no export flag is needed; it is sticky, so the current
+            // state arrives right away.
+            context.registerReceiver(r, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        }
+
+        override fun onCancel(arguments: Any?) {
+            receiver?.let { context.unregisterReceiver(it) }
+            receiver = null
+        }
     }
 
     private fun requestAudioPermission(result: MethodChannel.Result) {
