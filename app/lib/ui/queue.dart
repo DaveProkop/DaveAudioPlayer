@@ -317,5 +317,18 @@ Future<void> showMixSuggestion(BuildContext context, PlayerController player) as
       );
     },
   );
-  if (ok == true) await rust.reorderUpcoming(itemIds: Int64List.fromList(proposed));
+  if (ok != true) return;
+  // A track may have ended while the dialog was open: keep the proposed order for what is
+  // still upcoming now.
+  final nowCurrent = player.currentIndex;
+  final stillUpcoming = {for (final q in player.queue.sublist(nowCurrent == null ? 0 : nowCurrent + 1)) q.id};
+  final ids = [
+    for (final id in proposed)
+      if (stillUpcoming.contains(id)) id,
+  ];
+  if (ids.length != stillUpcoming.length) {
+    player.messages.add('Fronta se mezitím změnila, navrhni pořadí znovu');
+    return;
+  }
+  await rust.reorderUpcoming(itemIds: Int64List.fromList(ids));
 }
