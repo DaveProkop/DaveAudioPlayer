@@ -136,7 +136,7 @@ class SettingsPage extends StatelessWidget {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: onOpenEq,
                     ),
-                    const ListTile(title: Text('Výstupní zařízení'), subtitle: Text('Výchozí zařízení systému')),
+                    const _OutputDeviceTile(),
                   ],
                 ),
                 _Card(
@@ -233,4 +233,71 @@ Future<void> _confirmRemove(BuildContext context, FolderInfo f) async {
     ),
   );
   if (ok == true) await rust.removeFolder(folderId: f.id);
+}
+
+/// The sound device to play on; tapping lists the devices.
+class _OutputDeviceTile extends StatefulWidget {
+  const _OutputDeviceTile();
+
+  @override
+  State<_OutputDeviceTile> createState() => _OutputDeviceTileState();
+}
+
+class _OutputDeviceTileState extends State<_OutputDeviceTile> {
+  late Future<rust.OutputDevices> _devices = rust.outputDevices();
+
+  Future<void> _choose(rust.OutputDevices devices) async {
+    // '' stands for the system default.
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('Výstupní zařízení'),
+        children: [
+          for (final (value, label) in [('', 'Výchozí zařízení systému'), for (final n in devices.names) (n, n)])
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(dialog).pop(value),
+              child: Row(
+                children: [
+                  Icon(
+                    (devices.chosen ?? '') == value ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(label)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || chosen == (devices.chosen ?? '')) return;
+    await rust.setOutputDevice(name: chosen.isEmpty ? null : chosen);
+    setState(() {
+      _devices = rust.outputDevices();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<rust.OutputDevices>(
+      future: _devices,
+      builder: (context, snap) {
+        final d = snap.data;
+        final chosen = d?.chosen;
+        final missing = chosen != null && !d!.names.contains(chosen);
+        return ListTile(
+          title: const Text('Výstupní zařízení'),
+          subtitle: Text(
+            chosen == null
+                ? 'Výchozí zařízení systému'
+                : missing
+                ? '$chosen (není připojené – hraje výchozí)'
+                : chosen,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: d == null ? null : () => _choose(d),
+        );
+      },
+    );
+  }
 }

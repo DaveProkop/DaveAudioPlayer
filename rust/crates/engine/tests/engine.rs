@@ -1140,3 +1140,50 @@ fn a_mix_mode_sets_its_profile_and_survives_a_restart() {
     );
     engine.shutdown();
 }
+
+#[test]
+fn the_chosen_output_device_is_stored() {
+    let dir = TempDir::new("device");
+    let _ = scan(&dir);
+    let engine = start(&dir, None);
+    engine.send(Command::SetOutputDevice(Some("Sluchátka".into())));
+    engine.shutdown();
+    let conn = open_writer(&dir.db()).unwrap();
+    let stored: String = conn
+        .query_row("SELECT value FROM setting WHERE key = 'player.output_device'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, "Sluchátka");
+}
+
+#[test]
+#[ignore = "plays (silence) on the machine's real sound devices"]
+fn switching_the_output_device_keeps_playing() {
+    let dir = TempDir::new("switch");
+    write_clicks(&dir.music().join("quiet.wav"), 20.0, std::iter::empty());
+    let id = scan(&dir);
+    let engine = Engine::start(EngineConfig {
+        db_path: dir.db(),
+        output: OutputConfig::Device,
+        watch_folders: false,
+    })
+    .unwrap();
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("quiet.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    wait_for(&engine, |e| matches!(e, Event::State(s) if s.status == Status::Playing));
+    std::thread::sleep(Duration::from_millis(1500));
+    for name in dap_engine::output_devices().into_iter().map(Some).chain([None]) {
+        engine.send(Command::SetOutputDevice(name.clone()));
+        let events = wait_for(&engine, |e| matches!(e, Event::State(s) if s.status == Status::Playing));
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Error(_))),
+            "{name:?}: {events:?}"
+        );
+        let s = last_state(&events);
+        assert!(s.position_ms >= 1000, "{name:?} resumed at {}", s.position_ms);
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    engine.shutdown();
+}

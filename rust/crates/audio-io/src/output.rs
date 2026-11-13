@@ -49,16 +49,50 @@ pub struct OutputDevice {
     name: String,
 }
 
+fn device_name(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map(|d| d.name().to_owned())
+        .unwrap_or_else(|_| "unknown device".into())
+}
+
+/// Names of the output devices the system offers (for choosing one).
+pub fn output_device_names() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut names: Vec<String> = host
+        .output_devices()
+        .map(|devices| devices.map(|d| device_name(&d)).collect())
+        .unwrap_or_default();
+    names.dedup();
+    names
+}
+
 impl OutputDevice {
     /// The system default output device.
     pub fn default_device() -> Result<Self, OutputError> {
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or(OutputError::NoDevice)?;
+        Self::from_cpal(device)
+    }
+
+    /// The output device called `name`, or the default one when it is not there
+    /// (unplugged) or `name` is `None`.
+    pub fn named_or_default(name: Option<&str>) -> Result<Self, OutputError> {
+        let host = cpal::default_host();
+        let found = name.and_then(|name| {
+            host.output_devices()
+                .ok()?
+                .find(|d| device_name(d) == name)
+        });
+        match found {
+            Some(device) => Self::from_cpal(device),
+            None => Self::default_device(),
+        }
+    }
+
+    fn from_cpal(device: cpal::Device) -> Result<Self, OutputError> {
         let supported = device.default_output_config().map_err(backend)?;
-        let name = device
-            .description()
-            .map(|d| d.name().to_owned())
-            .unwrap_or_else(|_| "unknown device".into());
+        let name = device_name(&device);
         Ok(Self {
             device,
             sample_format: supported.sample_format(),
@@ -169,5 +203,18 @@ impl AudioOutput {
 
     pub fn device_name(&self) -> &str {
         &self.device_name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[ignore = "lists the machine's devices"]
+    fn print_devices() {
+        for name in super::output_device_names() {
+            println!("device: {name}");
+        }
+        let d = super::OutputDevice::named_or_default(Some("no such device")).unwrap();
+        println!("fallback: {} {} Hz", d.name(), d.sample_rate());
     }
 }

@@ -42,6 +42,8 @@ const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
 const SETTING_SMART: &str = "player.smart_transitions";
 const SETTING_MIX_MODE: &str = "player.mix_mode";
+/// Name of the chosen sound device (absent = the system default).
+pub const SETTING_OUTPUT_DEVICE: &str = "player.output_device";
 const SETTING_VOLUME: &str = "player.volume";
 const SETTING_EQ_ENABLED: &str = "eq.enabled";
 const SETTING_EQ_GAINS: &str = "eq.gains_db";
@@ -125,6 +127,9 @@ pub enum Command {
     SetSmartTransitions(bool),
     /// Switches to a mix mode: its crossfade, its transitions and its mix ordering.
     SetMixMode(MixMode),
+    /// Plays on the sound device of this name (`None` = the system default). Stored; an
+    /// unplugged device falls back to the default.
+    SetOutputDevice(Option<String>),
     /// Fixes the transition from one track into another (`None` = automatic again). It
     /// wins over the settings and the album rule; a kind the tracks cannot do (no beat
     /// grid) falls back to a crossfade.
@@ -589,6 +594,8 @@ struct Control {
     reported_rate: f64,
     /// The upcoming transition last reported to the UI.
     reported_transition: Option<UpcomingTransition>,
+    /// How the output was started, to start it again on another device.
+    output_config: OutputConfig,
 }
 
 /// Which library roots a scan covers.
@@ -649,7 +656,8 @@ impl Control {
         let reader = open_reader(&config.db_path).map_err(|e| e.to_string())?;
         let queue = Queue::load(&reader).map_err(|e| e.to_string())?;
         let error_tx = events.clone();
-        let started = output::start(&config.output, move |e| {
+        let device = read_setting_str(&reader, SETTING_OUTPUT_DEVICE);
+        let started = output::start(&config.output, device.as_deref(), move |e| {
             let _ = error_tx.send(Event::Error(format!("audio output: {e}")));
         })?;
 
@@ -722,16 +730,10 @@ impl Control {
             plan_sent: None,
             reported_rate: 1.0,
             reported_transition: None,
+            output_config: config.output.clone(),
         };
         let mut control = control;
-        // The mixer starts at defaults; bring it to the stored settings.
-        let s = control.settings;
-        control.send_mixer(MixerCommand::SetVolume(s.volume));
-        control.send_mixer(MixerCommand::SetEq {
-            gains_db: s.eq_gains_db,
-            preamp_db: s.eq_preamp_db,
-        });
-        control.send_mixer(MixerCommand::SetEqEnabled(s.eq_enabled));
+        control.init_mixer();
         control.emit(Event::Settings(control.settings));
         control.emit(Event::Queue(control.queue.entries()));
         control.emit_state();
@@ -1510,6 +1512,71 @@ impl Control {
         }
     }
 
+    /// A fresh mixer starts at defaults; bring it to the stored settings.
+    fn init_mixer(&mut self) {
+        let s = self.settings;
+        self.apply_volume();
+        self.send_mixer(MixerCommand::SetEq {
+            gains_db: s.eq_gains_db,
+            preamp_db: s.eq_preamp_db,
+        });
+        self.send_mixer(MixerCommand::SetEqEnabled(s.eq_enabled));
+    }
+
+    /// Plays on another sound device (`None` = the system default). The device may run at
+    /// another rate, so the output and its mixer start anew and the current track is
+    /// loaded again where it was.
+    fn set_output_device(&mut self, name: Option<String>) {
+        let stored = name.clone();
+        self.db.run(move |c| {
+            let _ = match stored {
+                Some(v) => c.execute(
+                    "INSERT INTO setting (key, value) VALUES (?1, ?2)
+                     ON CONFLICT (key) DO UPDATE SET value = ?2",
+                    params![SETTING_OUTPUT_DEVICE, v],
+                ),
+                None => c.execute("DELETE FROM setting WHERE key = ?1", [SETTING_OUTPUT_DEVICE]),
+            };
+        });
+        if !matches!(self.output_config, OutputConfig::Device) {
+            return;
+        }
+        let index = self.cursor_index();
+        let position_ms = self.position_ms();
+        let was = self.status;
+        // Stop the old stream first: the device may not allow two at once.
+        self.output = None;
+        self.current = None;
+        self.next = None;
+        self.plan_sent = None;
+        let error_tx = self.events.clone();
+        let started = output::start(&self.output_config, name.as_deref(), move |e| {
+            let _ = error_tx.send(Event::Error(format!("audio output: {e}")));
+        });
+        match started {
+            Ok(started) => {
+                self.mixer = started.control;
+                self.output = Some(started.output);
+                self.sample_rate = started.sample_rate;
+                self.channels = started.channels;
+            }
+            Err(e) => {
+                self.status = Status::Stopped;
+                self.emit(Event::Error(format!("audio output: {e}")));
+                self.emit_state();
+                return;
+            }
+        }
+        self.init_mixer();
+        match index {
+            Some(i) if was != Status::Stopped => self.play_index(i, position_ms, was == Status::Playing),
+            _ => {
+                self.resume_ms = position_ms;
+                self.emit_state();
+            }
+        }
+    }
+
     fn apply_volume(&mut self) {
         let v = self.settings.volume * if self.ducked { DUCK_GAIN } else { 1.0 };
         self.send_mixer(MixerCommand::SetVolume(v));
@@ -1785,6 +1852,7 @@ impl Control {
             Command::SetNormalization(on) => self.set_normalization(on),
             Command::SetSmartTransitions(on) => self.set_smart_transitions(on),
             Command::SetMixMode(mode) => self.set_mix_mode(mode),
+            Command::SetOutputDevice(name) => self.set_output_device(name),
             Command::SetTransitionOverride {
                 from_track,
                 to_track,

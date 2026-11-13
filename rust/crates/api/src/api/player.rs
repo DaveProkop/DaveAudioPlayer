@@ -209,6 +209,34 @@ pub fn set_smart_transitions(enabled: bool) -> Result<()> {
     send(Command::SetSmartTransitions(enabled))
 }
 
+/// The sound devices to choose from and the chosen one (`None` = system default).
+pub struct OutputDevices {
+    pub names: Vec<String>,
+    pub chosen: Option<String>,
+}
+
+pub fn output_devices() -> Result<OutputDevices> {
+    let chosen = super::library::with_reader(|c| {
+        use rusqlite::OptionalExtension;
+        c.query_row(
+            "SELECT value FROM setting WHERE key = ?1",
+            [dap_engine::SETTING_OUTPUT_DEVICE],
+            |r| r.get(0),
+        )
+        .optional()
+    })?;
+    Ok(OutputDevices {
+        names: dap_engine::output_devices(),
+        chosen,
+    })
+}
+
+/// Plays on the sound device called `name` (`None` = the system default). Playback moves
+/// over at once, where it was; an unplugged device falls back to the default.
+pub fn set_output_device(name: Option<String>) -> Result<()> {
+    send(Command::SetOutputDevice(name))
+}
+
 /// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
 pub fn set_mix_mode(mode: MixModeDto) -> Result<()> {
     send(Command::SetMixMode(match mode {

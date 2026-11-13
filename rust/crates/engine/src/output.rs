@@ -10,7 +10,7 @@ use dap_mixer::{Mixer, MixerControl, mixer};
 
 #[derive(Clone)]
 pub enum OutputConfig {
-    /// The system default output device.
+    /// A sound device: the one chosen in the settings, else the system default.
     Device,
     /// No device: a thread pulls audio at `speed` × real time, optionally recording it.
     Null {
@@ -55,14 +55,21 @@ pub(crate) struct Started {
     pub channels: usize,
 }
 
-/// Starts the output. Must run on the thread that keeps the result (cpal streams are not `Send`).
+/// Names of the sound devices that can be chosen.
+pub fn output_devices() -> Vec<String> {
+    dap_audio_io::output_device_names()
+}
+
+/// Starts the output on `device` (by name; the default when `None` or not there). Must run
+/// on the thread that keeps the result (cpal streams are not `Send`).
 pub(crate) fn start(
     config: &OutputConfig,
+    device: Option<&str>,
     on_error: impl FnMut(String) + Send + 'static,
 ) -> Result<Started, String> {
     match config {
         OutputConfig::Device => {
-            let device = OutputDevice::default_device().map_err(|e| e.to_string())?;
+            let device = OutputDevice::named_or_default(device).map_err(|e| e.to_string())?;
             let (rate, ch) = (device.sample_rate(), device.channels());
             let (m, control) = mixer(rate, ch);
             let out = device

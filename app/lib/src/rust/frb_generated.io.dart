@@ -96,6 +96,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryStats dco_decode_library_stats(dynamic raw);
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
   List<AlbumInfo> dco_decode_list_album_info(dynamic raw);
 
   @protected
@@ -173,6 +176,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<QueueItemDto>? dco_decode_opt_list_queue_item_dto(dynamic raw);
+
+  @protected
+  OutputDevices dco_decode_output_devices(dynamic raw);
 
   @protected
   PlayStatus dco_decode_play_status(dynamic raw);
@@ -303,6 +309,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryStats sse_decode_library_stats(SseDeserializer deserializer);
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
   List<AlbumInfo> sse_decode_list_album_info(SseDeserializer deserializer);
 
   @protected
@@ -398,6 +407,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<QueueItemDto>? sse_decode_opt_list_queue_item_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  OutputDevices sse_decode_output_devices(SseDeserializer deserializer);
 
   @protected
   PlayStatus sse_decode_play_status(SseDeserializer deserializer);
@@ -548,6 +560,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_library_stats(LibraryStats self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_album_info(
     List<AlbumInfo> self,
     SseSerializer serializer,
@@ -681,6 +696,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<QueueItemDto>? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_output_devices(OutputDevices self, SseSerializer serializer);
 
   @protected
   void sse_encode_play_status(PlayStatus self, SseSerializer serializer);

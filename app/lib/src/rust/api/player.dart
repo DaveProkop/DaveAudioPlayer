@@ -86,6 +86,14 @@ Future<void> setNormalization({required bool enabled}) =>
 Future<void> setSmartTransitions({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetSmartTransitions(enabled: enabled);
 
+Future<OutputDevices> outputDevices() =>
+    RustLib.instance.api.crateApiPlayerOutputDevices();
+
+/// Plays on the sound device called `name` (`None` = the system default). Playback moves
+/// over at once, where it was; an unplugged device falls back to the default.
+Future<void> setOutputDevice({String? name}) =>
+    RustLib.instance.api.crateApiPlayerSetOutputDevice(name: name);
+
 /// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
 Future<void> setMixMode({required MixModeDto mode}) =>
     RustLib.instance.api.crateApiPlayerSetMixMode(mode: mode);
@@ -231,6 +239,25 @@ enum MixModeDto {
 
   /// Long 10 s crossfades, no cuts or echoes; the mix order winds energy down.
   chill,
+}
+
+/// The sound devices to choose from and the chosen one (`None` = system default).
+class OutputDevices {
+  final List<String> names;
+  final String? chosen;
+
+  const OutputDevices({required this.names, this.chosen});
+
+  @override
+  int get hashCode => names.hashCode ^ chosen.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OutputDevices &&
+          runtimeType == other.runtimeType &&
+          names == other.names &&
+          chosen == other.chosen;
 }
 
 enum PlayStatus { stopped, playing, paused }
