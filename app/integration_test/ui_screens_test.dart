@@ -130,6 +130,13 @@ Future<void> _writeLibrary(Directory music) async {
         'TKEY': keys[k % keys.length],
         'TBPM': '${[124, 128, 126, 174, 122, 140, 125, 172][k++ % 8]}',
       }));
+      // Synced lyrics next to the first album's tracks.
+      if (album == 'Letní noc') {
+        await File('${dir.path}/${i + 1} $title.lrc').writeAsString(
+          '[00:00.00]$title\n[00:01.00]Světla města zhasínají\n[00:02.00]a noc je ještě mladá\n'
+          '[00:03.00]vlny šumí pod mostem\n[00:04.00]a ráno nikdo nehledá\n',
+        );
+      }
     }
   }
 }
@@ -181,6 +188,12 @@ void main() {
       await tester.tap(find.text(text).first);
       await settle();
     }
+
+    // No online lookups from tests.
+    await tester.runAsync(() async {
+      await setUiSetting(key: 'lyrics_online', value: 'false');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
 
     // ----- desktop -----
     tester.view.devicePixelRatio = 1;

@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/library.dart';
+import 'api/metadata.dart';
 import 'api/player.dart';
 import 'api/playlists.dart';
 
@@ -62,6 +63,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  LyricsDto dco_decode_box_autoadd_lyrics_dto(dynamic raw);
+
+  @protected
   PlayerSettingsDto dco_decode_box_autoadd_player_settings_dto(dynamic raw);
 
   @protected
@@ -110,6 +114,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FolderInfo> dco_decode_list_folder_info(dynamic raw);
 
   @protected
+  List<LyricLine> dco_decode_list_lyric_line(dynamic raw);
+
+  @protected
   List<PlaylistInfo> dco_decode_list_playlist_info(dynamic raw);
 
   @protected
@@ -134,6 +141,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TrackInfo> dco_decode_list_track_info(dynamic raw);
 
   @protected
+  LyricLine dco_decode_lyric_line(dynamic raw);
+
+  @protected
+  LyricsDto dco_decode_lyrics_dto(dynamic raw);
+
+  @protected
   MixModeDto dco_decode_mix_mode_dto(dynamic raw);
 
   @protected
@@ -150,6 +163,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  LyricsDto? dco_decode_opt_box_autoadd_lyrics_dto(dynamic raw);
 
   @protected
   PlayerSettingsDto? dco_decode_opt_box_autoadd_player_settings_dto(
@@ -263,6 +279,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  LyricsDto sse_decode_box_autoadd_lyrics_dto(SseDeserializer deserializer);
+
+  @protected
   PlayerSettingsDto sse_decode_box_autoadd_player_settings_dto(
     SseDeserializer deserializer,
   );
@@ -323,6 +342,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FolderInfo> sse_decode_list_folder_info(SseDeserializer deserializer);
 
   @protected
+  List<LyricLine> sse_decode_list_lyric_line(SseDeserializer deserializer);
+
+  @protected
   List<PlaylistInfo> sse_decode_list_playlist_info(
     SseDeserializer deserializer,
   );
@@ -353,6 +375,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TrackInfo> sse_decode_list_track_info(SseDeserializer deserializer);
 
   @protected
+  LyricLine sse_decode_lyric_line(SseDeserializer deserializer);
+
+  @protected
+  LyricsDto sse_decode_lyrics_dto(SseDeserializer deserializer);
+
+  @protected
   MixModeDto sse_decode_mix_mode_dto(SseDeserializer deserializer);
 
   @protected
@@ -371,6 +399,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  LyricsDto? sse_decode_opt_box_autoadd_lyrics_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PlayerSettingsDto? sse_decode_opt_box_autoadd_player_settings_dto(
@@ -508,6 +541,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_lyrics_dto(
+    LyricsDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_player_settings_dto(
     PlayerSettingsDto self,
     SseSerializer serializer,
@@ -583,6 +622,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_lyric_line(
+    List<LyricLine> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_playlist_info(
     List<PlaylistInfo> self,
     SseSerializer serializer,
@@ -631,6 +676,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_lyric_line(LyricLine self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_lyrics_dto(LyricsDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_mix_mode_dto(MixModeDto self, SseSerializer serializer);
 
   @protected
@@ -651,6 +702,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_lyrics_dto(
+    LyricsDto? self,
     SseSerializer serializer,
   );
 

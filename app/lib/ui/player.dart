@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
+import '../src/rust/api/metadata.dart';
 import '../src/rust/api/player.dart' as rust;
 import 'theme.dart';
 import 'widgets.dart';
@@ -590,6 +591,8 @@ class NowPlayingView extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: 12),
+            LyricsCard(key: ValueKey(t.id), player: player, trackId: t.id),
           ],
         );
         return Container(
@@ -751,6 +754,117 @@ class _TransitionLine extends StatelessWidget {
           Flexible(child: text),
           Icon(Icons.arrow_drop_down, size: 18, color: style.color),
         ],
+      ),
+    );
+  }
+}
+
+/// Lyrics of the playing track: synced ones follow the playback (the current line lit,
+/// a few around it), plain ones scroll. Looked up online on first use (LRCLIB).
+class LyricsCard extends StatefulWidget {
+  const LyricsCard({super.key, required this.player, required this.trackId});
+
+  final PlayerController player;
+  final int trackId;
+
+  @override
+  State<LyricsCard> createState() => _LyricsCardState();
+}
+
+class _LyricsCardState extends State<LyricsCard> {
+  static bool _open = true;
+  late final Future<LyricsDto?> _lyrics = lyrics(trackId: widget.trackId, online: true);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      decoration: BoxDecoration(color: scheme.surfaceContainer, borderRadius: BorderRadius.circular(10)),
+      child: FutureBuilder<LyricsDto?>(
+        future: _lyrics,
+        builder: (context, snap) {
+          final l = snap.data;
+          final status = switch (snap.connectionState) {
+            ConnectionState.done when snap.hasError => 'Text se nepodařilo načíst',
+            ConnectionState.done when l == null || l.lines.every((x) => x.text.isEmpty) => 'Text nenalezen',
+            ConnectionState.done => switch (l!.source) {
+              'lrclib' => 'z LRCLIB',
+              'lrc_file' => 'ze souboru .lrc',
+              _ => 'z tagů souboru',
+            },
+            _ => 'Hledám text…',
+          };
+          final has = l != null && l.lines.any((x) => x.text.isNotEmpty);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('Text', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(status, style: TextStyle(fontSize: 12, color: scheme.outline)),
+                  ),
+                  if (has)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: _open ? 'Skrýt text' : 'Zobrazit text',
+                      onPressed: () => setState(() => _open = !_open),
+                      icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
+                    ),
+                ],
+              ),
+              if (has && _open) l.synced ? _synced(l, scheme) : _plain(l, scheme),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _synced(LyricsDto l, ColorScheme scheme) {
+    return PositionTicker(
+      player: widget.player,
+      builder: (context) {
+        final pos = widget.player.positionMs;
+        var current = -1;
+        for (var i = 0; i < l.lines.length && l.lines[i].ms <= pos; i++) {
+          current = i;
+        }
+        final from = (current - 2).clamp(0, l.lines.length);
+        final to = (from + 7).clamp(0, l.lines.length);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = from; i < to; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  style: TextStyle(
+                    fontSize: i == current ? 17 : 15,
+                    height: 1.3,
+                    fontWeight: i == current ? FontWeight.w700 : FontWeight.w400,
+                    color: i == current ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  child: Text(l.lines[i].text.isEmpty ? '♪' : l.lines[i].text),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _plain(LyricsDto l, ColorScheme scheme) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 260),
+      child: SingleChildScrollView(
+        child: Text(
+          l.lines.map((x) => x.text).join('\n'),
+          style: TextStyle(fontSize: 15, height: 1.4, color: scheme.onSurfaceVariant),
+        ),
       ),
     );
   }

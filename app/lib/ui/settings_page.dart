@@ -121,6 +121,12 @@ class SettingsPage extends StatelessWidget {
                         onChanged: s == null ? null : (v) => rust.setNormalization(enabled: v),
                       ),
                     ),
+                    SwitchListTile(
+                      title: const Text('Hledat texty písní online'),
+                      subtitle: const Text('Když skladba nemá text v tagu ani v souboru .lrc, zkusí se LRCLIB (lrclib.net).'),
+                      value: prefs.lyricsOnline,
+                      onChanged: prefs.setLyricsOnline,
+                    ),
                     if (Platform.isAndroid)
                       SwitchListTile(
                         title: const Text('Analyzovat celou knihovnu při nabíjení'),

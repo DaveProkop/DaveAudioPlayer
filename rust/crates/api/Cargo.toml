@@ -22,6 +22,7 @@ dap-analysis = { version = "0.1.0", path = "../analysis" }
 dap-dsp = { version = "0.1.0", path = "../dsp" }
 dap-engine = { version = "0.1.0", path = "../engine" }
 dap-library = { version = "0.1.0", path = "../library" }
+dap-metadata = { version = "0.1.0", path = "../metadata" }
 flutter_rust_bridge = "=2.13.0"
 rusqlite = "0.42.0"
 

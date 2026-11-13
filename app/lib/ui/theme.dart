@@ -100,6 +100,9 @@ class UiPrefs extends ChangeNotifier {
   /// Android: analyze the whole library (key, loudness) while the phone charges.
   bool analyzeOnCharge = true;
 
+  /// Look lyrics up online (LRCLIB) when a track has none.
+  bool lyricsOnline = true;
+
   Future<void> load() async {
     try {
       themeMode = switch (await uiSetting(key: 'theme')) {
@@ -109,6 +112,7 @@ class UiPrefs extends ChangeNotifier {
       };
       coverAccent = await uiSetting(key: 'cover_accent') != 'false';
       analyzeOnCharge = await uiSetting(key: 'analyze_on_charge') != 'false';
+      lyricsOnline = await uiSetting(key: 'lyrics_online') != 'false';
     } catch (_) {
       // Engine not running: defaults.
     }
@@ -125,6 +129,12 @@ class UiPrefs extends ChangeNotifier {
     analyzeOnCharge = on;
     notifyListeners();
     rust.setUiSetting(key: 'analyze_on_charge', value: '$on');
+  }
+
+  void setLyricsOnline(bool on) {
+    lyricsOnline = on;
+    notifyListeners();
+    rust.setUiSetting(key: 'lyrics_online', value: '$on');
   }
 
   void setCoverAccent(bool on) {
