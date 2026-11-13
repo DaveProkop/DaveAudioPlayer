@@ -31,6 +31,11 @@ pub struct TempoDetector {
     prev: Vec<f32>,
     /// Onset strength per hop.
     envelope: Vec<f32>,
+    /// Onset strength of the bass bins only (kick drums), for the beat phase.
+    low_envelope: Vec<f32>,
+    low_bins: usize,
+    /// Previous linear magnitudes of the bass bins.
+    prev_low: Vec<f32>,
 }
 
 impl TempoDetector {
@@ -53,6 +58,10 @@ impl TempoDetector {
             filled: 0,
             prev: vec![0.0; FRAME / 2 + 1],
             envelope: Vec::new(),
+            low_envelope: Vec::new(),
+            // Bins up to ~170 Hz.
+            low_bins: ((170.0 * FRAME as f64 / f64::from(sample_rate)).ceil() as usize).max(2),
+            prev_low: vec![0.0; FRAME / 2 + 1],
         }
     }
 
@@ -85,35 +94,39 @@ impl TempoDetector {
             return;
         }
         let mut flux = 0.0f32;
-        for (c, p) in self.spectrum.iter().zip(self.prev.iter_mut()) {
+        let mut low = 0.0f32;
+        for (k, (c, p)) in self.spectrum.iter().zip(self.prev.iter_mut()).enumerate() {
             let m = (1.0 + 100.0 * c.norm()).ln();
-            flux += (m - *p).max(0.0);
+            let rise = (m - *p).max(0.0);
+            flux += rise;
+            if (1..=self.low_bins).contains(&k) {
+                // Linear here: a kick is loud in these bins, broadband noise is not.
+                let lin = c.norm();
+                low += (lin - self.prev_low[k]).max(0.0);
+                self.prev_low[k] = lin;
+            }
             *p = m;
         }
         self.envelope.push(flux);
+        self.low_envelope.push(low);
     }
 
-    /// Tempo in BPM (within [MIN_BPM, MAX_BPM]) and a confidence 0–1; `None` for audio
-    /// without a pulse or shorter than a few seconds.
+    /// Tempo in BPM (within [MIN_BPM, MAX_BPM], 0.1 BPM steps) and a confidence 0–1;
+    /// `None` for audio without a pulse or shorter than a few seconds.
     pub fn finish(&self) -> Option<(f64, f64)> {
+        self.finish_grid()
+            .map(|g| ((g.bpm * 10.0).round() / 10.0, g.confidence))
+    }
+
+    /// The beat grid: precise tempo and where the first beat falls. Assumes a steady
+    /// tempo (true for most dance and pop music).
+    pub fn finish_grid(&self) -> Option<Beatgrid> {
         let fr = self.frame_rate;
         let n = self.envelope.len();
         if n < (fr * 8.0) as usize {
             return None;
         }
-        // Keep the rhythmic part: subtract a moving average (~0.5 s), drop negatives.
-        let half = (fr * 0.25) as usize;
-        let mut prefix = vec![0.0f64; n + 1];
-        for (i, &v) in self.envelope.iter().enumerate() {
-            prefix[i + 1] = prefix[i] + f64::from(v);
-        }
-        let env: Vec<f64> = (0..n)
-            .map(|i| {
-                let (a, b) = (i.saturating_sub(half), (i + half + 1).min(n));
-                let mean = (prefix[b] - prefix[a]) / (b - a) as f64;
-                (f64::from(self.envelope[i]) - mean).max(0.0)
-            })
-            .collect();
+        let env = rhythmic(&self.envelope, fr);
         let energy: f64 = env.iter().map(|v| v * v).sum();
         if energy <= 0.0 {
             return None;
@@ -178,8 +191,90 @@ impl TempoDetector {
             bpm /= 2.0;
         }
         let confidence = ((best.1 - second) / best.1 * 3.0).clamp(0.0, 1.0);
-        Some(((bpm * 10.0).round() / 10.0, confidence))
+
+        // Beat phase near the start and near the end; the beats between them give the
+        // tempo far more precisely than the autocorrelation peak. The phase follows the
+        // kick drum (bass onsets), not hi-hats on the off-beats; without bass, everything.
+        let low = rhythmic(&self.low_envelope, fr);
+        let env = if low.iter().map(|v| v * v).sum::<f64>() > energy * 0.01 { low } else { env };
+        let mut period = 60.0 * fr / bpm;
+        let window = (fr * 30.0).min(n as f64 / 2.0);
+        let start = phase(&env, 0.0, window, period);
+        if n as f64 > fr * 60.0 {
+            let end = phase(&env, n as f64 - window, n as f64, period);
+            let beats = ((end - start) / period).round();
+            if beats >= 1.0 {
+                let refined = (end - start) / beats;
+                if (refined / period - 1.0).abs() < 0.02 {
+                    period = refined;
+                }
+            }
+        }
+        let first = start.rem_euclid(period);
+        // An onset shows when the transient sits in the middle of the analysis frame.
+        let first_beat_s = (first * HOP as f64 + FRAME as f64 / 2.0) / (fr * HOP as f64);
+        Some(Beatgrid {
+            bpm: 60.0 * fr / period,
+            confidence,
+            first_beat_s: first_beat_s.rem_euclid(60.0 / (60.0 * fr / period)),
+        })
     }
+}
+
+/// The rhythmic part of an onset envelope: minus its moving average (~0.5 s), no negatives.
+fn rhythmic(envelope: &[f32], fr: f64) -> Vec<f64> {
+    let n = envelope.len();
+    let half = (fr * 0.25) as usize;
+    let mut prefix = vec![0.0f64; n + 1];
+    for (i, &v) in envelope.iter().enumerate() {
+        prefix[i + 1] = prefix[i] + f64::from(v);
+    }
+    (0..n)
+        .map(|i| {
+            let (a, b) = (i.saturating_sub(half), (i + half + 1).min(n));
+            let mean = (prefix[b] - prefix[a]) / (b - a) as f64;
+            (f64::from(envelope[i]) - mean).max(0.0)
+        })
+        .collect()
+}
+
+/// Precise tempo and beat phase of a track.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Beatgrid {
+    /// Beats per minute, not rounded.
+    pub bpm: f64,
+    pub confidence: f64,
+    /// Time of the first beat in seconds (0 ≤ x < one beat); later beats follow every
+    /// `60 / bpm` seconds.
+    pub first_beat_s: f64,
+}
+
+/// The envelope frame (fractional) in `[from, from + period)` where beats spaced by
+/// `period` line up best with the onsets in `[from, to)`.
+fn phase(env: &[f64], from: f64, to: f64, period: f64) -> f64 {
+    let at = |x: f64| -> f64 {
+        let i = x.floor() as usize;
+        if i + 1 >= env.len() {
+            return 0.0;
+        }
+        let f = x - i as f64;
+        env[i] * (1.0 - f) + env[i + 1] * f
+    };
+    let mut best = (from, f64::MIN);
+    let mut p = from;
+    while p < from + period {
+        let mut score = 0.0;
+        let mut x = p;
+        while x < to {
+            score += at(x);
+            x += period;
+        }
+        if score > best.1 {
+            best = (p, score);
+        }
+        p += 0.25;
+    }
+    best.0
 }
 
 /// Parses a BPM tag ("128", "128.00", "127,5"); `None` outside 30–300.
@@ -231,6 +326,29 @@ mod tests {
             let found = detect(&pattern(bpm, 30.0)).expect("a tempo");
             assert!((found - bpm).abs() < 1.0, "{bpm} BPM: found {found}");
         }
+    }
+
+    fn grid(samples: &[f32]) -> Beatgrid {
+        let mut d = TempoDetector::new(RATE, 2);
+        for chunk in samples.chunks(4096) {
+            d.push(chunk);
+        }
+        d.finish_grid().expect("a beat grid")
+    }
+
+    #[test]
+    fn beat_grid_is_precise_and_in_phase() {
+        // 127.5 BPM for 90 s, starting after 0.3 s of silence.
+        let mut audio = vec![0.0f32; (f64::from(RATE) * 0.3) as usize * 2];
+        audio.extend(pattern(127.5, 90.0));
+        let g = grid(&audio);
+        assert!((g.bpm - 127.5).abs() < 0.02, "{} BPM", g.bpm);
+        assert!((g.first_beat_s - 0.3).abs() < 0.015, "first beat at {} s", g.first_beat_s);
+        // The grid still matches at the end: beat 190 (≈ 89.7 s) within 15 ms.
+        let beat = 60.0 / g.bpm;
+        let predicted = g.first_beat_s + 190.0 * beat;
+        let actual = 0.3 + 190.0 * 60.0 / 127.5;
+        assert!((predicted - actual).abs() < 0.015, "drift {} s", predicted - actual);
     }
 
     #[test]
