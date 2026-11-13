@@ -101,6 +101,8 @@ o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.
+Ruční úprava údajů skladby (`catalog::edit_track`: změněná pole do `tag_edit` → zamčená
+proti rescanu; volitelně zápis do tagů souboru přes `dap_tags::write_fields`).
 Texty písní: tag → soubor `.lrc` → LRCLIB (`dap-metadata`, reqwest blocking + rustls;
 `ui.lyrics_online`, miss 30 dní v `metadata_cache`), synchronizované v „Právě hraje“.
 Výběr výstupního zařízení (`player.output_device`, za běhu nový výstup a mixer, skladba

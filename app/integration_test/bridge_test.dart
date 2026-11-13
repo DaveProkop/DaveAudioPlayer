@@ -8,6 +8,7 @@ import 'dart:math';
 import 'dart:typed_data' as td;
 
 import 'package:daveaudioplayer/src/rust/api/library.dart';
+import 'package:daveaudioplayer/src/rust/api/metadata.dart';
 import 'package:daveaudioplayer/src/rust/api/player.dart';
 import 'package:daveaudioplayer/src/rust/api/playlists.dart';
 import 'package:daveaudioplayer/src/rust/frb_generated.dart';
@@ -109,6 +110,26 @@ void main() {
       final hits = await search(query: 'ton', limit: 10);
       expect(hits.map((t) => t.title), ['tone']);
       expect(hits.single.durationMs, inInclusiveRange(990, 1010));
+
+      step('edit');
+      final form = (await trackFields(trackId: hits.single.id))!;
+      final error = await editTrack(
+        trackId: hits.single.id,
+        fields: TrackFieldsDto(
+          title: 'tón upravený',
+          artists: form.artists,
+          album: 'Zkušební album',
+          albumArtist: form.albumArtist,
+          year: 2024,
+          trackNo: form.trackNo,
+          discNo: form.discNo,
+          genres: const ['Test'],
+        ),
+        writeToFile: true,
+      );
+      expect(error, isNull);
+      final edited = await search(query: 'upravený', limit: 10);
+      expect(edited.map((t) => (t.title, t.album)), [('tón upravený', 'Zkušební album')]);
 
       step('playlists');
       final tone = hits.single.id;

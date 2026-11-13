@@ -31,6 +31,13 @@ class PlayerController extends ChangeNotifier {
   /// Increments when the library content changed (after a scan or an edit).
   int libraryVersion = 0;
 
+  /// Fetches a track again after its facts were edited.
+  Future<void> refreshTrack(int id) async {
+    final fresh = await tracksByIds(ids: Int64List.fromList([id]));
+    remember(fresh);
+    notifyListeners();
+  }
+
   /// Library views reload after an edit made here (playlists).
   void libraryEdited() {
     libraryVersion++;

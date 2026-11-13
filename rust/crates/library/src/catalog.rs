@@ -402,6 +402,190 @@ pub fn upsert_track(
     Ok(track_id)
 }
 
+/// The editable facts of a track, as shown in the edit form.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrackFields {
+    pub title: String,
+    pub artists: Vec<String>,
+    /// Empty = no album.
+    pub album: String,
+    pub album_artist: String,
+    pub year: Option<i64>,
+    pub track_no: Option<i64>,
+    pub disc_no: Option<i64>,
+    pub genres: Vec<String>,
+}
+
+/// The current editable facts of a track.
+pub fn track_fields(conn: &Connection, track_id: i64) -> Result<Option<TrackFields>> {
+    let base = conn
+        .query_row(
+            "SELECT t.title, coalesce(al.title, ''), coalesce(aa.name, ''), t.year, t.track_no,
+                    t.disc_no
+             FROM track t
+             LEFT JOIN album al ON al.id = t.album_id
+             LEFT JOIN artist aa ON aa.id = al.album_artist_id
+             WHERE t.id = ?1",
+            [track_id],
+            |r| {
+                Ok(TrackFields {
+                    title: r.get(0)?,
+                    album: r.get(1)?,
+                    album_artist: r.get(2)?,
+                    year: r.get(3)?,
+                    track_no: r.get(4)?,
+                    disc_no: r.get(5)?,
+                    ..TrackFields::default()
+                })
+            },
+        )
+        .optional()?;
+    let Some(mut f) = base else {
+        return Ok(None);
+    };
+    let names = |sql: &str| -> Result<Vec<String>> {
+        let mut st = conn.prepare_cached(sql)?;
+        let rows = st.query_map([track_id], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    };
+    f.artists = names(
+        "SELECT a.name FROM track_artist ta JOIN artist a ON a.id = ta.artist_id
+         WHERE ta.track_id = ?1 AND ta.role = 'main' ORDER BY ta.position",
+    )?;
+    f.genres = names(
+        "SELECT g.name FROM track_genre tg JOIN genre g ON g.id = tg.genre_id
+         WHERE tg.track_id = ?1 ORDER BY g.name",
+    )?;
+    Ok(Some(f))
+}
+
+/// One changed field: its `tag_edit` name and the old and new value as text.
+pub type FieldChange = (&'static str, Option<String>, Option<String>);
+
+/// Applies a manual edit: every field that differs from the catalog is updated and
+/// locked with a `tag_edit` row (`source` user, `status` as given), so rescans keep it.
+/// Returns the changes (for writing them to the file too).
+pub fn edit_track(
+    conn: &Connection,
+    track_id: i64,
+    new: &TrackFields,
+    status: &str,
+) -> Result<Vec<FieldChange>> {
+    let Some(old) = track_fields(conn, track_id)? else {
+        return Ok(Vec::new());
+    };
+    let mut cache = NameCache::default();
+    let text = |v: &str| (!v.trim().is_empty()).then(|| v.trim().to_string());
+    let num = |v: Option<i64>| v.map(|n| n.to_string());
+    let list = |v: &[String]| text(&v.join("; "));
+    let mut changes: Vec<FieldChange> = Vec::new();
+
+    let title = new.title.trim();
+    if title != old.title && !title.is_empty() {
+        conn.execute(
+            "UPDATE track SET title = ?2, title_sort = ?3 WHERE id = ?1",
+            params![track_id, title, sort_name(title)],
+        )?;
+        changes.push((field::TITLE, text(&old.title), text(title)));
+    }
+    let artists: Vec<String> = new
+        .artists
+        .iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .collect();
+    if artists != old.artists {
+        conn.execute(
+            "DELETE FROM track_artist WHERE track_id = ?1 AND role = 'main'",
+            [track_id],
+        )?;
+        for (pos, name) in artists.iter().enumerate() {
+            let aid = cache.artist_id(conn, name)?;
+            conn.execute(
+                "INSERT OR IGNORE INTO track_artist (track_id, artist_id, role, position)
+                 VALUES (?1, ?2, 'main', ?3)",
+                params![track_id, aid, pos as i64],
+            )?;
+        }
+        changes.push((field::ARTIST, list(&old.artists), list(&artists)));
+    }
+    let (album, album_artist) = (new.album.trim(), new.album_artist.trim());
+    if album != old.album || album_artist != old.album_artist {
+        let album_id = if album.is_empty() {
+            None
+        } else {
+            let aa = (!album_artist.is_empty())
+                .then(|| cache.artist_id(conn, album_artist))
+                .transpose()?;
+            Some(album_id(conn, &mut cache, album, aa, &TrackTags::default())?)
+        };
+        conn.execute(
+            "UPDATE track SET album_id = ?2 WHERE id = ?1",
+            params![track_id, album_id],
+        )?;
+        if album != old.album {
+            changes.push((field::ALBUM, text(&old.album), text(album)));
+        }
+        if album_artist != old.album_artist {
+            changes.push((field::ALBUM_ARTIST, text(&old.album_artist), text(album_artist)));
+        }
+    }
+    for (col, f, old_v, new_v) in [
+        ("year", field::YEAR, old.year, new.year),
+        ("track_no", field::TRACK_NO, old.track_no, new.track_no),
+        ("disc_no", field::DISC_NO, old.disc_no, new.disc_no),
+    ] {
+        if old_v != new_v {
+            conn.execute(
+                &format!("UPDATE track SET {col} = ?2 WHERE id = ?1"),
+                params![track_id, new_v],
+            )?;
+            changes.push((f, num(old_v), num(new_v)));
+        }
+    }
+    let mut genres: Vec<String> = new
+        .genres
+        .iter()
+        .map(|g| g.trim().to_string())
+        .filter(|g| !g.is_empty())
+        .collect();
+    genres.sort();
+    if genres != old.genres {
+        conn.execute("DELETE FROM track_genre WHERE track_id = ?1", [track_id])?;
+        for name in &genres {
+            let gid = cache.genre_id(conn, name)?;
+            conn.execute(
+                "INSERT OR IGNORE INTO track_genre (track_id, genre_id) VALUES (?1, ?2)",
+                params![track_id, gid],
+            )?;
+        }
+        changes.push((field::GENRE, list(&old.genres), list(&genres)));
+    }
+
+    let now = now_ms();
+    for (f, old_v, new_v) in &changes {
+        conn.execute(
+            "INSERT INTO tag_edit (track_id, field, old_value, new_value, source, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'user', ?5, ?6)",
+            params![track_id, f, old_v, new_v, status, now],
+        )?;
+    }
+    if !changes.is_empty() {
+        reindex_track(conn, track_id)?;
+    }
+    Ok(changes)
+}
+
+/// Records how writing a track's edits to its file went.
+pub fn set_edit_status(conn: &Connection, track_id: i64, error: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE tag_edit SET status = ?2, error = ?3
+         WHERE track_id = ?1 AND status = 'pending_write'",
+        params![track_id, if error.is_some() { "failed" } else { "written" }, error],
+    )?;
+    Ok(())
+}
+
 /// True for LRC lyrics with `[mm:ss` timestamps.
 fn is_lrc(body: &str) -> bool {
     body.lines().any(|l| {
@@ -472,6 +656,58 @@ mod tests {
         assert_eq!(cache.genre_id(&conn, "rock").unwrap(), g);
         // A fresh cache sees what earlier ones wrote.
         assert_eq!(NameCache::default().artist_id(&conn, "kabát").unwrap(), a);
+    }
+
+    #[test]
+    fn edits_change_only_what_differs_and_lock_it() {
+        let conn = open_in_memory().unwrap();
+        conn.execute("INSERT INTO library_root (path, added_at) VALUES ('/m', 0)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO file (root_id, rel_path, size, mtime, format, scanned_at)
+             VALUES (1, 'a.mp3', 0, 0, 'mp3', 0)",
+            [],
+        )
+        .unwrap();
+        let mut cache = NameCache::default();
+        let tags = TrackTags {
+            title: Some("Old".into()),
+            artists: vec!["Band".into()],
+            album: Some("First".into()),
+            year: Some(1999),
+            genres: vec!["Rock".into()],
+            ..TrackTags::default()
+        };
+        let id = upsert_track(&conn, &mut cache, 1, &tags, "a").unwrap();
+
+        let mut form = track_fields(&conn, id).unwrap().unwrap();
+        assert_eq!((form.title.as_str(), form.album.as_str()), ("Old", "First"));
+        form.title = "Novy".into();
+        form.year = Some(2001);
+        form.album = "Second".into();
+        form.album_artist = "Band".into();
+        let changes = edit_track(&conn, id, &form, "db_only").unwrap();
+        let fields: Vec<&str> = changes.iter().map(|c| c.0).collect();
+        // The album artist was already "Band" (taken from the track artist).
+        assert_eq!(fields, [field::TITLE, field::ALBUM, field::YEAR]);
+        assert_eq!(track_fields(&conn, id).unwrap().unwrap(), form);
+
+        // A rescan with the old tags keeps the edited fields, takes the others.
+        let rescanned = TrackTags {
+            artists: vec!["Band feat. Guest".into()],
+            ..tags
+        };
+        upsert_track(&conn, &mut cache, 1, &rescanned, "a").unwrap();
+        let after = track_fields(&conn, id).unwrap().unwrap();
+        assert_eq!((after.title.as_str(), after.year), ("Novy", Some(2001)));
+        assert_eq!(after.album, "Second");
+        assert_eq!(after.artists, ["Band feat. Guest"], "not edited: follows the file");
+        let hits: i64 = conn
+            .query_row("SELECT count(*) FROM track_fts WHERE track_fts MATCH 'Novy'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(hits, 1, "search finds the new title");
     }
 
     #[test]

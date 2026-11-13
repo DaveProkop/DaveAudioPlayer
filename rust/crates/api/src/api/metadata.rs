@@ -182,3 +182,73 @@ pub fn lyrics(track_id: i64, online: bool) -> Result<Option<LyricsDto>> {
         }
     }
 }
+
+/// The editable facts of a track.
+pub struct TrackFieldsDto {
+    pub title: String,
+    pub artists: Vec<String>,
+    /// Empty = no album.
+    pub album: String,
+    pub album_artist: String,
+    pub year: Option<i64>,
+    pub track_no: Option<i64>,
+    pub disc_no: Option<i64>,
+    pub genres: Vec<String>,
+}
+
+pub fn track_fields(track_id: i64) -> Result<Option<TrackFieldsDto>> {
+    let f = with_reader(|c| {
+        dap_library::catalog::track_fields(c, track_id).map_err(|e| match e {
+            dap_library::DbError::Sqlite(e) => e,
+            other => rusqlite::Error::ToSqlConversionFailure(other.to_string().into()),
+        })
+    })?;
+    Ok(f.map(|f| TrackFieldsDto {
+        title: f.title,
+        artists: f.artists,
+        album: f.album,
+        album_artist: f.album_artist,
+        year: f.year,
+        track_no: f.track_no,
+        disc_no: f.disc_no,
+        genres: f.genres,
+    }))
+}
+
+/// Saves a manual edit. Changed fields are locked, so rescans keep them. With
+/// `write_to_file` they are also written into the file's tags; returns the error text
+/// when that failed (the edit itself is kept either way).
+pub fn edit_track(
+    track_id: i64,
+    fields: TrackFieldsDto,
+    write_to_file: bool,
+) -> Result<Option<String>> {
+    let new = dap_library::catalog::TrackFields {
+        title: fields.title,
+        artists: fields.artists,
+        album: fields.album,
+        album_artist: fields.album_artist,
+        year: fields.year,
+        track_no: fields.track_no,
+        disc_no: fields.disc_no,
+        genres: fields.genres,
+    };
+    let status = if write_to_file { "pending_write" } else { "db_only" };
+    let changes = write(move |c| dap_library::catalog::edit_track(c, track_id, &new, status))?
+        .map_err(|e| anyhow!(e.to_string()))?;
+    if !write_to_file || changes.is_empty() {
+        return Ok(None);
+    }
+    let Some(track) = facts(track_id)? else {
+        return Ok(None);
+    };
+    let values: Vec<(&str, Option<String>)> =
+        changes.iter().map(|(f, _, new)| (*f, new.clone())).collect();
+    let error = dap_tags::write_fields(&track.path, &values)
+        .err()
+        .map(|e| e.to_string());
+    let status_error = error.clone();
+    write(move |c| dap_library::catalog::set_edit_status(c, track_id, status_error.as_deref()))?
+        .map_err(|e| anyhow!(e.to_string()))?;
+    Ok(error)
+}

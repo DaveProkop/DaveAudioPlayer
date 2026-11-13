@@ -460,6 +460,7 @@ dependencies = [
  "dap-engine",
  "dap-library",
  "dap-metadata",
+ "dap-tags",
  "flutter_rust_bridge",
  "jni-sys 0.4.1",
  "ndk-context",

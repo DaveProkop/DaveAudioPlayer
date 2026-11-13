@@ -12,13 +12,30 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Lyrics of a track: stored ones (from the file's tags or an earlier lookup), else an
 /// `.lrc` file next to the audio file, else (when `online`) LRCLIB. Found lyrics are
-/// stored; an online miss is remembered for 30 days.
+/// stored; an online miss is remembered for 30 days. The `ui.lyrics_online` setting
+/// (`false`) turns the online part off.
 Future<LyricsDto?> lyrics({
   required PlatformInt64 trackId,
   required bool online,
 }) => RustLib.instance.api.crateApiMetadataLyrics(
   trackId: trackId,
   online: online,
+);
+
+Future<TrackFieldsDto?> trackFields({required PlatformInt64 trackId}) =>
+    RustLib.instance.api.crateApiMetadataTrackFields(trackId: trackId);
+
+/// Saves a manual edit. Changed fields are locked, so rescans keep them. With
+/// `write_to_file` they are also written into the file's tags; returns the error text
+/// when that failed (the edit itself is kept either way).
+Future<String?> editTrack({
+  required PlatformInt64 trackId,
+  required TrackFieldsDto fields,
+  required bool writeToFile,
+}) => RustLib.instance.api.crateApiMetadataEditTrack(
+  trackId: trackId,
+  fields: fields,
+  writeToFile: writeToFile,
 );
 
 class LyricLine {
@@ -65,4 +82,54 @@ class LyricsDto {
           synced == other.synced &&
           lines == other.lines &&
           source == other.source;
+}
+
+/// The editable facts of a track.
+class TrackFieldsDto {
+  final String title;
+  final List<String> artists;
+
+  /// Empty = no album.
+  final String album;
+  final String albumArtist;
+  final PlatformInt64? year;
+  final PlatformInt64? trackNo;
+  final PlatformInt64? discNo;
+  final List<String> genres;
+
+  const TrackFieldsDto({
+    required this.title,
+    required this.artists,
+    required this.album,
+    required this.albumArtist,
+    this.year,
+    this.trackNo,
+    this.discNo,
+    required this.genres,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artists.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      year.hashCode ^
+      trackNo.hashCode ^
+      discNo.hashCode ^
+      genres.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrackFieldsDto &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artists == other.artists &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          year == other.year &&
+          trackNo == other.trackNo &&
+          discNo == other.discNo &&
+          genres == other.genres;
 }

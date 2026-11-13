@@ -217,6 +217,49 @@ fn parse_year(value: Option<&str>) -> Option<i32> {
     }
 }
 
+/// Writes fields into every tag of the file (creating the format's usual tag if there is
+/// none), so a later read sees them whichever tag wins. Field names as in `tag_edit`:
+/// title, artist, album, album_artist, year, genre, track_no, disc_no; `None` removes
+/// the field. Unknown names are ignored.
+pub fn write_fields(path: &Path, fields: &[(&str, Option<String>)]) -> Result<(), TagError> {
+    let reader = std::io::BufReader::new(std::fs::File::open(path).map_err(TagError::Io)?);
+    let mut file = Probe::new(reader)
+        .options(ParseOptions::new())
+        .guess_file_type()
+        .map_err(TagError::Io)?
+        .read()
+        .map_err(|e| TagError::Parse(e.to_string()))?;
+    if file.tags().is_empty() {
+        let tag_type = file.primary_tag_type();
+        file.insert_tag(Tag::new(tag_type));
+    }
+    let types: Vec<_> = file.tags().iter().map(|t| t.tag_type()).collect();
+    for tag_type in types {
+        let Some(tag) = file.tag_mut(tag_type) else {
+            continue;
+        };
+        for (field, value) in fields {
+            let key = match *field {
+                "title" => ItemKey::TrackTitle,
+                "artist" => ItemKey::TrackArtist,
+                "album" => ItemKey::AlbumTitle,
+                "album_artist" => ItemKey::AlbumArtist,
+                "year" => ItemKey::RecordingDate,
+                "genre" => ItemKey::Genre,
+                "track_no" => ItemKey::TrackNumber,
+                "disc_no" => ItemKey::DiscNumber,
+                _ => continue,
+            };
+            tag.remove_key(key.clone());
+            if let Some(v) = value.as_ref().filter(|v| !v.is_empty()) {
+                tag.insert_text(key, v.clone());
+            }
+        }
+    }
+    file.save_to_path(path, lofty::config::WriteOptions::default())
+        .map_err(|e| TagError::Parse(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +315,33 @@ mod tests {
         fill(&mut tag);
         tag.save_to_path(&path, WriteOptions::default()).unwrap();
         path
+    }
+
+    #[test]
+    fn written_fields_read_back() {
+        let dir = TempDir::new("write");
+        let path = tagged_wav(&dir, |t| {
+            t.set_title("Old".into());
+            t.set_artist("Someone".into());
+            t.set_genre("Rock".into());
+        });
+        write_fields(
+            &path,
+            &[
+                ("title", Some("Nový název".into())),
+                ("album", Some("Album".into())),
+                ("year", Some("2001".into())),
+                ("track_no", Some("3".into())),
+                ("genre", None),
+            ],
+        )
+        .unwrap();
+        let t = read(&path).unwrap().tags;
+        assert_eq!(t.title.as_deref(), Some("Nový název"));
+        assert_eq!(t.artists, ["Someone"], "untouched fields stay");
+        assert_eq!(t.album.as_deref(), Some("Album"));
+        assert_eq!((t.year, t.track_no), (Some(2001), Some(3)));
+        assert!(t.genres.is_empty(), "removed");
     }
 
     #[test]
