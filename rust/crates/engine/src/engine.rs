@@ -151,6 +151,25 @@ pub struct PlayerState {
     pub at: Instant,
     pub rate: f64,
     pub duration_ms: Option<u64>,
+    /// How and when the current track passes into the next one, once that is known.
+    pub transition: Option<UpcomingTransition>,
+}
+
+/// The planned transition out of the current track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpcomingTransition {
+    pub kind: TransitionKind,
+    /// Position in the current track where it starts.
+    pub start_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionKind {
+    Gapless,
+    Crossfade,
+    Beatmatch,
+    FilterSweep,
+    EchoOut,
 }
 
 /// Playback preferences, stored in the database.
@@ -439,6 +458,8 @@ struct Control {
     plan_sent: Option<TransitionPlan>,
     /// The playback rate last reported to the UI.
     reported_rate: f64,
+    /// The upcoming transition last reported to the UI.
+    reported_transition: Option<UpcomingTransition>,
 }
 
 /// Which library roots a scan covers.
@@ -566,6 +587,7 @@ impl Control {
             analysis_reported: Instant::now() - ANALYSIS_REPORT_EVERY,
             plan_sent: None,
             reported_rate: 1.0,
+            reported_transition: None,
         };
         let mut control = control;
         // The mixer starts at defaults; bring it to the stored settings.
@@ -674,7 +696,30 @@ impl Control {
             at: Instant::now(),
             rate: self.playback_rate(),
             duration_ms,
+            transition: self.upcoming_transition(),
         }));
+    }
+
+    /// The transition the mixer will do out of the current deck (gapless without a plan).
+    fn upcoming_transition(&self) -> Option<UpcomingTransition> {
+        let current = self.current.as_ref()?;
+        self.next.as_ref()?;
+        let ms = |frame: u64| current.source_frame(frame) * 1000 / u64::from(self.sample_rate);
+        Some(match self.plan_sent.filter(|p| p.token == current.token) {
+            Some(plan) => UpcomingTransition {
+                kind: match plan.shape {
+                    TransitionShape::Crossfade => TransitionKind::Crossfade,
+                    TransitionShape::Beatmatch { .. } => TransitionKind::Beatmatch,
+                    TransitionShape::FilterSweep => TransitionKind::FilterSweep,
+                    TransitionShape::EchoOut { .. } => TransitionKind::EchoOut,
+                },
+                start_ms: ms(plan.start_frame),
+            },
+            None => UpcomingTransition {
+                kind: TransitionKind::Gapless,
+                start_ms: ms(current.info.end_frame()?),
+            },
+        })
     }
 
     fn send_mixer(&mut self, mut cmd: MixerCommand) {
@@ -1119,6 +1164,12 @@ impl Control {
                 Some(plan) => MixerCommand::SetTransition(plan),
                 None => MixerCommand::ClearTransition,
             });
+        }
+        // The UI shows what comes next; tell it when that changes.
+        let upcoming = self.upcoming_transition();
+        if upcoming != self.reported_transition {
+            self.reported_transition = upcoming;
+            self.emit_state();
         }
     }
 

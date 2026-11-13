@@ -8,7 +8,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dap_dsp::eq::BAND_COUNT;
-use dap_engine::{Command, Engine, EngineConfig, Event, OutputConfig, PlayerState, Status};
+use dap_engine::{
+    Command, Engine, EngineConfig, Event, OutputConfig, PlayerState, Status, TransitionKind,
+};
 use flutter_rust_bridge::frb;
 use rusqlite::Connection;
 
@@ -304,6 +306,22 @@ pub struct PlayerStateDto {
     pub at_epoch_ms: i64,
     pub rate: f64,
     pub duration_ms: Option<i64>,
+    /// How and when the current track passes into the next one.
+    pub transition: Option<TransitionDto>,
+}
+
+pub struct TransitionDto {
+    pub kind: TransitionKindDto,
+    /// Position in the current track where the transition starts.
+    pub start_ms: i64,
+}
+
+pub enum TransitionKindDto {
+    Gapless,
+    Crossfade,
+    Beatmatch,
+    FilterSweep,
+    EchoOut,
 }
 
 pub struct QueueItemDto {
@@ -401,6 +419,16 @@ fn state_dto(s: PlayerState) -> PlayerStateDto {
         at_epoch_ms: epoch_ms(s.at),
         rate: s.rate,
         duration_ms: s.duration_ms.map(|d| d as i64),
+        transition: s.transition.map(|t| TransitionDto {
+            kind: match t.kind {
+                TransitionKind::Gapless => TransitionKindDto::Gapless,
+                TransitionKind::Crossfade => TransitionKindDto::Crossfade,
+                TransitionKind::Beatmatch => TransitionKindDto::Beatmatch,
+                TransitionKind::FilterSweep => TransitionKindDto::FilterSweep,
+                TransitionKind::EchoOut => TransitionKindDto::EchoOut,
+            },
+            start_ms: t.start_ms as i64,
+        }),
     }
 }
 

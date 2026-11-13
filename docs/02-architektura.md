@@ -91,6 +91,9 @@ zapnutým crossfadem, ne navazující skladby alba) řídicí vlákno zvolí `Mi
   přesně na střih,
 - bez změřeného tempa → crossfade.
 Mixer jen vyhodnocuje `TransitionShape`; zpožďovací linka (max 2 s) je předalokovaná.
+`PlayerState.transition` hlásí UI typ a začátek příštího přechodu (pozice v odcházející
+skladbě; bez plánu = `Gapless` na konci skladby). UI ukazuje odpočet a tlačítko „Poslechnout
+přechod“ (seek 10 s před začátek).
 
 ## Beatmatch přechody
 Analyzátor (verze 5) ukládá i mřížku dob: přesné BPM a `first_beat_ms` (fáze dob z basové

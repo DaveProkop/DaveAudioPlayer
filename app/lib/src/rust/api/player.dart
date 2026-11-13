@@ -258,6 +258,9 @@ class PlayerStateDto {
   final double rate;
   final PlatformInt64? durationMs;
 
+  /// How and when the current track passes into the next one.
+  final TransitionDto? transition;
+
   const PlayerStateDto({
     required this.status,
     this.index,
@@ -267,6 +270,7 @@ class PlayerStateDto {
     required this.atEpochMs,
     required this.rate,
     this.durationMs,
+    this.transition,
   });
 
   @override
@@ -278,7 +282,8 @@ class PlayerStateDto {
       positionMs.hashCode ^
       atEpochMs.hashCode ^
       rate.hashCode ^
-      durationMs.hashCode;
+      durationMs.hashCode ^
+      transition.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -292,7 +297,8 @@ class PlayerStateDto {
           positionMs == other.positionMs &&
           atEpochMs == other.atEpochMs &&
           rate == other.rate &&
-          durationMs == other.durationMs;
+          durationMs == other.durationMs &&
+          transition == other.transition;
 }
 
 class QueueItemDto {
@@ -355,3 +361,25 @@ class ScanSummaryDto {
           failed == other.failed &&
           cancelled == other.cancelled;
 }
+
+class TransitionDto {
+  final TransitionKindDto kind;
+
+  /// Position in the current track where the transition starts.
+  final PlatformInt64 startMs;
+
+  const TransitionDto({required this.kind, required this.startMs});
+
+  @override
+  int get hashCode => kind.hashCode ^ startMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransitionDto &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          startMs == other.startMs;
+}
+
+enum TransitionKindDto { gapless, crossfade, beatmatch, filterSweep, echoOut }

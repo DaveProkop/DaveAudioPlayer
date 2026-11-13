@@ -543,20 +543,24 @@ class NowPlayingView extends StatelessWidget {
                                 color: keysCompatible(t.key, next.key) ? context.appColors.ok : scheme.onSurfaceVariant,
                               ),
                             ),
-                          Text(
-                            gapless
-                                ? 'bez mezery – další skladba alba'
-                                : (s?.crossfadeMs ?? 0) > 0
-                                ? 'prolnutí ${(s!.crossfadeMs / 1000).round()} s'
-                                : 'bez mezery',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: gapless ? context.appColors.gapless : scheme.primary,
-                            ),
-                          ),
+                          _TransitionLine(player: player, gapless: gapless),
                         ],
                       ),
                     ),
+                    if (player.state?.transition case final tr? when tr.kind != rust.TransitionKindDto.gapless)
+                      PositionTicker(
+                        player: player,
+                        builder: (context) {
+                          // 10 s of the outgoing track, then the transition itself.
+                          final from = tr.startMs - _previewLeadMs;
+                          final ahead = from > player.positionMs + 1000;
+                          return IconButton(
+                            onPressed: ahead ? () => rust.seek(positionMs: from) : null,
+                            icon: const Icon(Icons.headphones_outlined),
+                            tooltip: 'Poslechnout přechod',
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -635,6 +639,9 @@ class NowPlayingView extends StatelessWidget {
     );
   }
 
+  /// How far before a transition its preview starts.
+  static const _previewLeadMs = 10000;
+
   static String _format(TrackDetails d) {
     final parts = <String>[d.format.toUpperCase()];
     if (d.bitDepth != null && d.sampleRate != null) {
@@ -648,5 +655,42 @@ class NowPlayingView extends StatelessWidget {
   static String _khz(int hz) {
     final k = hz / 1000;
     return (k == k.roundToDouble() ? k.toStringAsFixed(0) : k.toStringAsFixed(1)).replaceAll('.', ',');
+  }
+}
+
+/// How the current track passes into the next one, and in how long.
+class _TransitionLine extends StatelessWidget {
+  const _TransitionLine({required this.player, required this.gapless});
+
+  final PlayerController player;
+  final bool gapless;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tr = player.state?.transition;
+    final s = player.settings;
+    final label = switch (tr?.kind) {
+      rust.TransitionKindDto.beatmatch => 'beatmatch – srovnání do rytmu',
+      rust.TransitionKindDto.filterSweep => 'přechod filtrem',
+      rust.TransitionKindDto.echoOut => 'echo na poslední době',
+      rust.TransitionKindDto.crossfade => 'prolnutí ${((s?.crossfadeMs ?? 0) / 1000).round()} s',
+      rust.TransitionKindDto.gapless => gapless ? 'bez mezery – další skladba alba' : 'bez mezery',
+      null =>
+        gapless
+            ? 'bez mezery – další skladba alba'
+            : (s?.crossfadeMs ?? 0) > 0
+            ? 'prolnutí ${(s!.crossfadeMs / 1000).round()} s'
+            : 'bez mezery',
+    };
+    final style = TextStyle(fontSize: 12.5, color: gapless ? context.appColors.gapless : scheme.primary);
+    if (tr == null) return Text(label, style: style);
+    return PositionTicker(
+      player: player,
+      builder: (context) {
+        final left = tr.startMs - player.positionMs;
+        return Text(left > 0 ? '$label · za ${formatMs(left)}' : label, style: style);
+      },
+    );
   }
 }

@@ -73,6 +73,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TrackDetails dco_decode_box_autoadd_track_details(dynamic raw);
 
   @protected
+  TransitionDto dco_decode_box_autoadd_transition_dto(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -147,6 +150,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TrackDetails? dco_decode_opt_box_autoadd_track_details(dynamic raw);
 
   @protected
+  TransitionDto? dco_decode_opt_box_autoadd_transition_dto(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -172,6 +178,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TrackInfo dco_decode_track_info(dynamic raw);
+
+  @protected
+  TransitionDto dco_decode_transition_dto(dynamic raw);
+
+  @protected
+  TransitionKindDto dco_decode_transition_kind_dto(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -237,6 +249,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TrackDetails sse_decode_box_autoadd_track_details(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransitionDto sse_decode_box_autoadd_transition_dto(
     SseDeserializer deserializer,
   );
 
@@ -325,6 +342,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TransitionDto? sse_decode_opt_box_autoadd_transition_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -354,6 +376,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TrackInfo sse_decode_track_info(SseDeserializer deserializer);
+
+  @protected
+  TransitionDto sse_decode_transition_dto(SseDeserializer deserializer);
+
+  @protected
+  TransitionKindDto sse_decode_transition_kind_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -433,6 +463,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_track_details(
     TrackDetails self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_transition_dto(
+    TransitionDto self,
     SseSerializer serializer,
   );
 
@@ -554,6 +590,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_transition_dto(
+    TransitionDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
@@ -591,6 +633,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_track_info(TrackInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_transition_dto(TransitionDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_transition_kind_dto(
+    TransitionKindDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

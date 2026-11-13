@@ -2015,6 +2015,19 @@ impl SseDecode for Option<crate::api::library::TrackDetails> {
     }
 }
 
+impl SseDecode for Option<crate::api::player::TransitionDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::player::TransitionDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2085,6 +2098,8 @@ impl SseDecode for crate::api::player::PlayerStateDto {
         let mut var_atEpochMs = <i64>::sse_decode(deserializer);
         let mut var_rate = <f64>::sse_decode(deserializer);
         let mut var_durationMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_transition =
+            <Option<crate::api::player::TransitionDto>>::sse_decode(deserializer);
         return crate::api::player::PlayerStateDto {
             status: var_status,
             index: var_index,
@@ -2094,6 +2109,7 @@ impl SseDecode for crate::api::player::PlayerStateDto {
             at_epoch_ms: var_atEpochMs,
             rate: var_rate,
             duration_ms: var_durationMs,
+            transition: var_transition,
         };
     }
 }
@@ -2190,6 +2206,33 @@ impl SseDecode for crate::api::library::TrackInfo {
             cover_small: var_coverSmall,
             cover_medium: var_coverMedium,
             cover_large: var_coverLarge,
+        };
+    }
+}
+
+impl SseDecode for crate::api::player::TransitionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::api::player::TransitionKindDto>::sse_decode(deserializer);
+        let mut var_startMs = <i64>::sse_decode(deserializer);
+        return crate::api::player::TransitionDto {
+            kind: var_kind,
+            start_ms: var_startMs,
+        };
+    }
+}
+
+impl SseDecode for crate::api::player::TransitionKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::player::TransitionKindDto::Gapless,
+            1 => crate::api::player::TransitionKindDto::Crossfade,
+            2 => crate::api::player::TransitionKindDto::Beatmatch,
+            3 => crate::api::player::TransitionKindDto::FilterSweep,
+            4 => crate::api::player::TransitionKindDto::EchoOut,
+            _ => unreachable!("Invalid variant for TransitionKindDto: {}", inner),
         };
     }
 }
@@ -2507,6 +2550,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::PlayerStateDto {
             self.at_epoch_ms.into_into_dart().into_dart(),
             self.rate.into_into_dart().into_dart(),
             self.duration_ms.into_into_dart().into_dart(),
+            self.transition.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2627,6 +2671,51 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::library::TrackInfo>
     for crate::api::library::TrackInfo
 {
     fn into_into_dart(self) -> crate::api::library::TrackInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::player::TransitionDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.start_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::player::TransitionDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::player::TransitionDto>
+    for crate::api::player::TransitionDto
+{
+    fn into_into_dart(self) -> crate::api::player::TransitionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::player::TransitionKindDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Gapless => 0.into_dart(),
+            Self::Crossfade => 1.into_dart(),
+            Self::Beatmatch => 2.into_dart(),
+            Self::FilterSweep => 3.into_dart(),
+            Self::EchoOut => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::player::TransitionKindDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::player::TransitionKindDto>
+    for crate::api::player::TransitionKindDto
+{
+    fn into_into_dart(self) -> crate::api::player::TransitionKindDto {
         self
     }
 }
@@ -2940,6 +3029,16 @@ impl SseEncode for Option<crate::api::library::TrackDetails> {
     }
 }
 
+impl SseEncode for Option<crate::api::player::TransitionDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::player::TransitionDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3001,6 +3100,7 @@ impl SseEncode for crate::api::player::PlayerStateDto {
         <i64>::sse_encode(self.at_epoch_ms, serializer);
         <f64>::sse_encode(self.rate, serializer);
         <Option<i64>>::sse_encode(self.duration_ms, serializer);
+        <Option<crate::api::player::TransitionDto>>::sse_encode(self.transition, serializer);
     }
 }
 
@@ -3057,6 +3157,33 @@ impl SseEncode for crate::api::library::TrackInfo {
         <Option<String>>::sse_encode(self.cover_small, serializer);
         <Option<String>>::sse_encode(self.cover_medium, serializer);
         <Option<String>>::sse_encode(self.cover_large, serializer);
+    }
+}
+
+impl SseEncode for crate::api::player::TransitionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::player::TransitionKindDto>::sse_encode(self.kind, serializer);
+        <i64>::sse_encode(self.start_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::api::player::TransitionKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::player::TransitionKindDto::Gapless => 0,
+                crate::api::player::TransitionKindDto::Crossfade => 1,
+                crate::api::player::TransitionKindDto::Beatmatch => 2,
+                crate::api::player::TransitionKindDto::FilterSweep => 3,
+                crate::api::player::TransitionKindDto::EchoOut => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

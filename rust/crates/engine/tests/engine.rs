@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use dap_engine::{
     Command, Engine, EngineConfig, Event, OutputConfig, PlayerState, QueueEntry, Status,
+    TransitionKind,
 };
 use dap_library::db::open_writer;
 use dap_library::{add_root, scan_root};
@@ -367,7 +368,7 @@ fn captured_from_first_sound(capture: &Mutex<Vec<f32>>) -> Vec<f32> {
     out[start..].to_vec()
 }
 
-fn play_to_the_end(engine: &Engine) {
+fn play_to_the_end(engine: &Engine) -> Vec<Event> {
     let mut started_playing = false;
     wait_for(engine, |e| match e {
         Event::State(s) if s.status == Status::Playing => {
@@ -376,7 +377,7 @@ fn play_to_the_end(engine: &Engine) {
         }
         Event::State(s) => started_playing && s.status == Status::Stopped,
         _ => false,
-    });
+    })
 }
 
 #[test]
@@ -790,8 +791,15 @@ fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
         at: None,
     });
     engine.send(Command::Play);
-    play_to_the_end(&engine);
+    let events = play_to_the_end(&engine);
     engine.shutdown();
+
+    // The UI is told what comes: a beatmatch on a's beat 16 (8.25 s into the file).
+    let announced = events.iter().find_map(|e| match e {
+        Event::State(s) => s.transition.filter(|t| t.kind == TransitionKind::Beatmatch),
+        _ => None,
+    });
+    assert_eq!(announced.map(|t| t.start_ms), Some(8250), "{announced:?}");
 
     // Index 0 = a's first beat. The transition starts on a's 16-beat phrase boundary
     // that leaves room for 16 beats before a's end: beat 16 (8 s after the first beat).

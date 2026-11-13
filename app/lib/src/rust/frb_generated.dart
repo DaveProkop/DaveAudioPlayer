@@ -1655,6 +1655,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransitionDto dco_decode_box_autoadd_transition_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_transition_dto(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -1818,6 +1824,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransitionDto? dco_decode_opt_box_autoadd_transition_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_transition_dto(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
@@ -1856,8 +1868,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlayerStateDto dco_decode_player_state_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return PlayerStateDto(
       status: dco_decode_play_status(arr[0]),
       index: dco_decode_opt_box_autoadd_u_32(arr[1]),
@@ -1867,6 +1879,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       atEpochMs: dco_decode_i_64(arr[5]),
       rate: dco_decode_f_64(arr[6]),
       durationMs: dco_decode_opt_box_autoadd_i_64(arr[7]),
+      transition: dco_decode_opt_box_autoadd_transition_dto(arr[8]),
     );
   }
 
@@ -1940,6 +1953,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       coverMedium: dco_decode_opt_String(arr[11]),
       coverLarge: dco_decode_opt_String(arr[12]),
     );
+  }
+
+  @protected
+  TransitionDto dco_decode_transition_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TransitionDto(
+      kind: dco_decode_transition_kind_dto(arr[0]),
+      startMs: dco_decode_i_64(arr[1]),
+    );
+  }
+
+  @protected
+  TransitionKindDto dco_decode_transition_kind_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransitionKindDto.values[raw as int];
   }
 
   @protected
@@ -2126,6 +2157,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_track_details(deserializer));
+  }
+
+  @protected
+  TransitionDto sse_decode_box_autoadd_transition_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_transition_dto(deserializer));
   }
 
   @protected
@@ -2384,6 +2423,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransitionDto? sse_decode_opt_box_autoadd_transition_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_transition_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2448,6 +2500,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_atEpochMs = sse_decode_i_64(deserializer);
     var var_rate = sse_decode_f_64(deserializer);
     var var_durationMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_transition = sse_decode_opt_box_autoadd_transition_dto(
+      deserializer,
+    );
     return PlayerStateDto(
       status: var_status,
       index: var_index,
@@ -2457,6 +2512,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       atEpochMs: var_atEpochMs,
       rate: var_rate,
       durationMs: var_durationMs,
+      transition: var_transition,
     );
   }
 
@@ -2547,6 +2603,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       coverMedium: var_coverMedium,
       coverLarge: var_coverLarge,
     );
+  }
+
+  @protected
+  TransitionDto sse_decode_transition_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_transition_kind_dto(deserializer);
+    var var_startMs = sse_decode_i_64(deserializer);
+    return TransitionDto(kind: var_kind, startMs: var_startMs);
+  }
+
+  @protected
+  TransitionKindDto sse_decode_transition_kind_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransitionKindDto.values[inner];
   }
 
   @protected
@@ -2715,6 +2788,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_track_details(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_transition_dto(
+    TransitionDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transition_dto(self, serializer);
   }
 
   @protected
@@ -2971,6 +3053,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_transition_dto(
+    TransitionDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_transition_dto(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3028,6 +3123,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_64(self.atEpochMs, serializer);
     sse_encode_f_64(self.rate, serializer);
     sse_encode_opt_box_autoadd_i_64(self.durationMs, serializer);
+    sse_encode_opt_box_autoadd_transition_dto(self.transition, serializer);
   }
 
   @protected
@@ -3083,6 +3179,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.coverSmall, serializer);
     sse_encode_opt_String(self.coverMedium, serializer);
     sse_encode_opt_String(self.coverLarge, serializer);
+  }
+
+  @protected
+  void sse_encode_transition_dto(TransitionDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transition_kind_dto(self.kind, serializer);
+    sse_encode_i_64(self.startMs, serializer);
+  }
+
+  @protected
+  void sse_encode_transition_kind_dto(
+    TransitionKindDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
