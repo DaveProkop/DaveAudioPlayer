@@ -54,3 +54,6 @@ key.properties
 
 # Release packages
 dist/
+
+# Signing keys and other secrets (never commit)
+secrets/
