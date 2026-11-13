@@ -47,6 +47,10 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (
 - Screenshoty UI na vygenerované knihovně: `flutter test integration_test/ui_screens_test.dart -d windows`
   (PNG do složky v proměnné `DAP_SHOTS`, jinak `%TEMP%\dap_shots`)
 - Po změně `rust/crates/api/src/api/*`: `cd app && flutter_rust_bridge_codegen generate`
+- Release (postup v `app/README.md`): `flutter build windows --release` (+ VC++ runtime DLL, zip
+  do `dist/`), `flutter build apk --release --split-per-abi`. Android se podepisuje klíčem
+  `secrets/daveaudioplayer.jks` přes `app/android/key.properties` – obojí mimo git, hesla
+  nečíst ani nevypisovat. Stejným klíčem musí být podepsaná každá aktualizace.
 - Windows vyžaduje zapnutý Režim vývojáře (Flutter pluginy používají symlinky).
 - Konzolové nástroje: `cargo run -p dap-engine --example player -- <db> <složka>`,
   `cargo run -p dap-library --example scan -- <db> <složka> [hledání]`
@@ -84,5 +88,6 @@ z chromagramu v analýze na pozadí (jistota < 1; tag má 1); štítky v sezname
 kompatibilní tóniny k právě hrané zvýrazněné.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
+Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.
 Zbývá do MVP: na Androidu ověřit sledování složek na sdíleném úložišti, sluchátka a crossfade. Mimo MVP UI: playlisty, výběr výstupního zařízení, odebrání složky,
 vlastní presety EQ.
