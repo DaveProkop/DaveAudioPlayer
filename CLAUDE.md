@@ -19,7 +19,7 @@ které vybere uživatel. Rozpracované MVP: Rust jádro (`rust/`) a Flutter UI (
 - **Jen lokální soubory.** Spotify a YouTube se NEintegrují (nejde je míchat do fronty s vlastním DSP).
 - Hlavní Rust crate: symphonia (dekódování), cpal (výstup WASAPI/AAudio), rubato (resampling),
   rtrb (lock-free fronty), crossbeam-channel, rusqlite (bundled, FTS5), lofty (tagy),
-  ebur128, signalsmith-stretch (time-stretch, MIT), rusty-chromaprint, reqwest + tokio, notify, walkdir,
+  ebur128, Signalsmith Stretch (time-stretch, MIT, vendorovaný v crate `dap-stretch`), rusty-chromaprint, reqwest + tokio, notify, walkdir,
   image (jen jpeg/png/webp/bmp; náhledy obalů jako JPEG).
 - Flutter: `audio_service` + `audio_session` pro Android (foreground service, notifikace, lock screen,
   audio focus). Windows SMTC je v Rustu (crate `windows`, modul `dap_api::media_controls`).
@@ -87,7 +87,8 @@ Tónina (Camelot) u skladeb: z tagu (TKEY/INITIALKEY, i Open Key a názvy tónin
 z chromagramu v analýze na pozadí (jistota < 1; tag má 1); štítky v seznamech a frontě,
 kompatibilní tóniny k právě hrané zvýrazněné.
 Tempo (BPM) z detekce/tagů (tag jen když souhlasí), Smart Mix řazení fronty (tónina + tempo,
-návrh s potvrzením).
+návrh s potvrzením). Beatmatch přechody (mřížka dob, time-stretch `dap-stretch`, nástup na
+dobu, prohození basů, návrat tempa; přepínač v nastavení).
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.

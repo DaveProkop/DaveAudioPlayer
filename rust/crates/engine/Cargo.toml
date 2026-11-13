@@ -16,6 +16,7 @@ dap-audio-io = { version = "0.1.0", path = "../audio-io" }
 dap-dsp = { version = "0.1.0", path = "../dsp" }
 dap-library = { version = "0.1.0", path = "../library" }
 dap-mixer = { version = "0.1.0", path = "../mixer" }
+dap-stretch = { version = "0.1.0", path = "../stretch" }
 notify = "8.2.1"
 rtrb = "0.4.1"
 rusqlite = "0.42.0"

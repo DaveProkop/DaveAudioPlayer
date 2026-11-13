@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1684154210;
+  int get rustContentHash => -1154468785;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -160,6 +160,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiPlayerSeek({required PlatformInt64 positionMs});
 
   Future<void> crateApiPlayerSetBackgroundAnalysis({required bool enabled});
+
+  Future<void> crateApiPlayerSetBeatmatch({required bool enabled});
 
   Future<void> crateApiPlayerSetCrossfade({required int ms});
 
@@ -1073,6 +1075,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiPlayerSetBeatmatch({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 31,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiPlayerSetBeatmatchConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPlayerSetBeatmatchConstMeta =>
+      const TaskConstMeta(debugName: "set_beatmatch", argNames: ["enabled"]);
+
+  @override
   Future<void> crateApiPlayerSetCrossfade({required int ms}) {
     return handler.executeNormal(
       NormalTask(
@@ -1082,7 +1112,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1114,7 +1144,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1144,7 +1174,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1172,7 +1202,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1207,7 +1237,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1237,7 +1267,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1265,7 +1295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1292,7 +1322,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1326,7 +1356,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1356,7 +1386,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1383,7 +1413,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1413,7 +1443,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1441,7 +1471,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1469,7 +1499,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1806,15 +1836,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlayerSettingsDto dco_decode_player_settings_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return PlayerSettingsDto(
       crossfadeMs: dco_decode_u_32(arr[0]),
       normalize: dco_decode_bool(arr[1]),
-      volume: dco_decode_f_64(arr[2]),
-      eqEnabled: dco_decode_bool(arr[3]),
-      eqGainsDb: dco_decode_list_prim_f_64_strict(arr[4]),
-      eqPreampDb: dco_decode_f_64(arr[5]),
+      beatmatch: dco_decode_bool(arr[2]),
+      volume: dco_decode_f_64(arr[3]),
+      eqEnabled: dco_decode_bool(arr[4]),
+      eqGainsDb: dco_decode_list_prim_f_64_strict(arr[5]),
+      eqPreampDb: dco_decode_f_64(arr[6]),
     );
   }
 
@@ -2387,6 +2418,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_crossfadeMs = sse_decode_u_32(deserializer);
     var var_normalize = sse_decode_bool(deserializer);
+    var var_beatmatch = sse_decode_bool(deserializer);
     var var_volume = sse_decode_f_64(deserializer);
     var var_eqEnabled = sse_decode_bool(deserializer);
     var var_eqGainsDb = sse_decode_list_prim_f_64_strict(deserializer);
@@ -2394,6 +2426,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PlayerSettingsDto(
       crossfadeMs: var_crossfadeMs,
       normalize: var_normalize,
+      beatmatch: var_beatmatch,
       volume: var_volume,
       eqEnabled: var_eqEnabled,
       eqGainsDb: var_eqGainsDb,
@@ -2971,6 +3004,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.crossfadeMs, serializer);
     sse_encode_bool(self.normalize, serializer);
+    sse_encode_bool(self.beatmatch, serializer);
     sse_encode_f_64(self.volume, serializer);
     sse_encode_bool(self.eqEnabled, serializer);
     sse_encode_list_prim_f_64_strict(self.eqGainsDb, serializer);

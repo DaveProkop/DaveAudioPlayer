@@ -64,7 +64,23 @@ Měření (`--example bpm_accuracy`): bez chybných tagů 88,6 % do ±1 BPM, 8,9
 kolečku, změna dur/moll) + tempo (rozdíl v %, 1 bod za 3 %, poloviční/dvojí tempo blízko);
 hladový průchod od hrané skladby + 2-opt. UI ukáže návrh s počtem plynulých přechodů
 předtím a potom, `ReorderUpcoming` ho použije (jen skladby za hranou, ověří, že se fronta
-nezměnila). Beatmatch přechody (time-stretch) zatím ne.
+nezměnila).
+
+## Beatmatch přechody
+Analyzátor (verze 5) ukládá i mřížku dob: přesné BPM a `first_beat_ms` (fáze dob z basové
+obálky na začátku a konci skladby, perioda z počtu dob mezi nimi). Když mají sousední
+skladby tempo do 8 % (`player.beatmatch`, jen se zapnutým crossfadem, ne navazující skladby
+alba), řídicí vlákno nahraje další deck s `StretchPlan`: hraje od své první doby, rychlostí
+`rate` = perioda příchozí / perioda odcházející po dobu jedné fráze (16 dob), pak se lineárně
+vrací na 1 během další fráze. Time-stretch (crate `dap-stretch`: vendorovaný Signalsmith
+Stretch, MIT, vlastní C obal přes `cc`, bez bindgenu) běží v decku; výstup je zarovnaný na
+snímek: stretcher se naplní (`seek`) vstupem končícím `input_latency + output_latency * rate`
+za první dobou. Přechod (`TransitionShape::Beatmatch`) začíná na poslední hranici 16dobé
+fráze odcházející skladby, kam se fráze ještě vejde (jinak na poslední době), trvá 16 dob:
+příchozí nastupuje bez basů (sinus), v polovině se basy prohodí (30 ms, `x + (g-1)·LP150(x)`),
+pak odcházející zeslabí (kosinus). Pozice deck výstupu ↔ pozice ve skladbě se přepočítává
+přes plán (`Loaded::source_frame`), rychlost pro UI je aktuální `rate`. Test
+`beatmatch_lands_the_incoming_beats_on_the_outgoing_grid` ověřuje kliky do ±5 ms.
 
 ## Vyrovnání hlasitosti
 Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true

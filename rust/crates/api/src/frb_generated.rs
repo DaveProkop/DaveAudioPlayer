@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1684154210;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1154468785;
 
 // Section: executor
 
@@ -1093,6 +1093,41 @@ fn wire__crate__api__player__set_background_analysis_impl(
         },
     )
 }
+fn wire__crate__api__player__set_beatmatch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_beatmatch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::player::set_beatmatch(api_enabled)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__player__set_crossfade_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2022,6 +2057,7 @@ impl SseDecode for crate::api::player::PlayerSettingsDto {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_crossfadeMs = <u32>::sse_decode(deserializer);
         let mut var_normalize = <bool>::sse_decode(deserializer);
+        let mut var_beatmatch = <bool>::sse_decode(deserializer);
         let mut var_volume = <f64>::sse_decode(deserializer);
         let mut var_eqEnabled = <bool>::sse_decode(deserializer);
         let mut var_eqGainsDb = <Vec<f64>>::sse_decode(deserializer);
@@ -2029,6 +2065,7 @@ impl SseDecode for crate::api::player::PlayerSettingsDto {
         return crate::api::player::PlayerSettingsDto {
             crossfade_ms: var_crossfadeMs,
             normalize: var_normalize,
+            beatmatch: var_beatmatch,
             volume: var_volume,
             eq_enabled: var_eqEnabled,
             eq_gains_db: var_eqGainsDb,
@@ -2219,20 +2256,21 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__player__set_crossfade_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__player__set_eq_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__player__set_eq_enabled_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__player__set_normalization_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__player__set_ui_setting_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__library__suggest_mix_order_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__library__track_details_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__library__ui_setting_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__player__set_beatmatch_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__player__set_crossfade_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__player__set_eq_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__player__set_eq_enabled_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__player__set_normalization_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__player__set_ui_setting_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__library__suggest_mix_order_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__library__track_details_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__library__ui_setting_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2435,6 +2473,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::PlayerSettingsDto {
         [
             self.crossfade_ms.into_into_dart().into_dart(),
             self.normalize.into_into_dart().into_dart(),
+            self.beatmatch.into_into_dart().into_dart(),
             self.volume.into_into_dart().into_dart(),
             self.eq_enabled.into_into_dart().into_dart(),
             self.eq_gains_db.into_into_dart().into_dart(),
@@ -2941,6 +2980,7 @@ impl SseEncode for crate::api::player::PlayerSettingsDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.crossfade_ms, serializer);
         <bool>::sse_encode(self.normalize, serializer);
+        <bool>::sse_encode(self.beatmatch, serializer);
         <f64>::sse_encode(self.volume, serializer);
         <bool>::sse_encode(self.eq_enabled, serializer);
         <Vec<f64>>::sse_encode(self.eq_gains_db, serializer);

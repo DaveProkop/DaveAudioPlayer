@@ -182,6 +182,12 @@ pub fn set_normalization(enabled: bool) -> Result<()> {
     send(Command::SetNormalization(enabled))
 }
 
+/// Beatmatched transitions (with crossfade on): tracks of similar tempo are brought to the
+/// same tempo, start on the beat and swap their basses; others are crossfaded.
+pub fn set_beatmatch(enabled: bool) -> Result<()> {
+    send(Command::SetBeatmatch(enabled))
+}
+
 // ----- queue -----------------------------------------------------------------------
 
 pub fn play_index(index: u32) -> Result<()> {
@@ -318,6 +324,7 @@ pub struct ScanSummaryDto {
 pub struct PlayerSettingsDto {
     pub crossfade_ms: u32,
     pub normalize: bool,
+    pub beatmatch: bool,
     pub volume: f64,
     pub eq_enabled: bool,
     pub eq_gains_db: Vec<f64>,
@@ -406,6 +413,7 @@ fn to_dto(event: Event) -> AppEvent {
             settings: Some(PlayerSettingsDto {
                 crossfade_ms: s.crossfade_ms,
                 normalize: s.normalize,
+                beatmatch: s.beatmatch,
                 volume: f64::from(s.volume),
                 eq_enabled: s.eq_enabled,
                 eq_gains_db: s.eq_gains_db.iter().map(|&g| f64::from(g)).collect(),

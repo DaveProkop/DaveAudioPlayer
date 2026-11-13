@@ -79,6 +79,11 @@ Future<void> setCrossfade({required int ms}) =>
 Future<void> setNormalization({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetNormalization(enabled: enabled);
 
+/// Beatmatched transitions (with crossfade on): tracks of similar tempo are brought to the
+/// same tempo, start on the beat and swap their basses; others are crossfaded.
+Future<void> setBeatmatch({required bool enabled}) =>
+    RustLib.instance.api.crateApiPlayerSetBeatmatch(enabled: enabled);
+
 Future<void> playIndex({required int index}) =>
     RustLib.instance.api.crateApiPlayerPlayIndex(index: index);
 
@@ -200,6 +205,7 @@ enum PlayStatus { stopped, playing, paused }
 class PlayerSettingsDto {
   final int crossfadeMs;
   final bool normalize;
+  final bool beatmatch;
   final double volume;
   final bool eqEnabled;
   final Float64List eqGainsDb;
@@ -208,6 +214,7 @@ class PlayerSettingsDto {
   const PlayerSettingsDto({
     required this.crossfadeMs,
     required this.normalize,
+    required this.beatmatch,
     required this.volume,
     required this.eqEnabled,
     required this.eqGainsDb,
@@ -218,6 +225,7 @@ class PlayerSettingsDto {
   int get hashCode =>
       crossfadeMs.hashCode ^
       normalize.hashCode ^
+      beatmatch.hashCode ^
       volume.hashCode ^
       eqEnabled.hashCode ^
       eqGainsDb.hashCode ^
@@ -230,6 +238,7 @@ class PlayerSettingsDto {
           runtimeType == other.runtimeType &&
           crossfadeMs == other.crossfadeMs &&
           normalize == other.normalize &&
+          beatmatch == other.beatmatch &&
           volume == other.volume &&
           eqEnabled == other.eqEnabled &&
           eqGainsDb == other.eqGainsDb &&

@@ -29,7 +29,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::analyzer::{ANALYSIS_ALGO, Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
-use crate::deck::{DeckInfo, spawn_deck};
+use crate::deck::{DeckInfo, StretchPlan, spawn_deck};
 use crate::output::{self, Output, OutputConfig};
 use crate::queue::{Queue, QueueEntry};
 use crate::watcher::FolderWatcher;
@@ -42,6 +42,7 @@ const SETTING_CURRENT: &str = "player.current_queue_item";
 const SETTING_POSITION: &str = "player.position_ms";
 const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
+const SETTING_BEATMATCH: &str = "player.beatmatch";
 const SETTING_VOLUME: &str = "player.volume";
 const SETTING_EQ_ENABLED: &str = "eq.enabled";
 const SETTING_EQ_GAINS: &str = "eq.gains_db";
@@ -55,6 +56,11 @@ pub const MAX_CROSSFADE_MS: u32 = 12_000;
 const ANALYSIS_REPORT_EVERY: Duration = Duration::from_secs(4);
 /// Shorter fades than this are not worth it: the tracks just follow each other.
 const MIN_FADE_MS: u64 = 10;
+/// Tracks further apart in tempo are crossfaded, not beatmatched (the stretch would show).
+const BEATMATCH_MAX_TEMPO_GAP: f64 = 0.08;
+/// A beatmatched transition starts on a phrase boundary and lasts one phrase; the incoming
+/// track then returns to its own tempo over another phrase.
+const PHRASE_BEATS: i64 = 16;
 
 pub struct EngineConfig {
     pub db_path: PathBuf,
@@ -106,6 +112,8 @@ pub enum Command {
     },
     /// Volume normalization to a common loudness (EBU R128).
     SetNormalization(bool),
+    /// Beatmatched transitions between tracks of similar tempo (when crossfade is on).
+    SetBeatmatch(bool),
     /// Stores a free-form UI preference (key without prefix; saved as `ui.<key>`).
     SetUiSetting {
         key: String,
@@ -146,6 +154,7 @@ pub struct PlayerState {
 pub struct PlayerSettings {
     pub crossfade_ms: u32,
     pub normalize: bool,
+    pub beatmatch: bool,
     /// Linear 0.0–1.0.
     pub volume: f32,
     pub eq_enabled: bool,
@@ -290,6 +299,49 @@ struct Loaded {
     album: Option<AlbumPos>,
     /// Follows the previous deck on the same album: gapless, and the same gain.
     continues_album: bool,
+    /// Beat grid from the analysis, if known.
+    beats: Option<Beats>,
+    /// Set when the deck plays time-stretched (beatmatched into the previous one).
+    stretch: Option<Stretched>,
+}
+
+impl Loaded {
+    /// The source frame (at the output rate) playing at deck output frame `out`.
+    fn source_frame(&self, out: u64) -> u64 {
+        match self.stretch {
+            Some(s) => s.start + s.plan.source_at(out as f64).round() as u64,
+            None => out,
+        }
+    }
+
+    /// The deck output frame at which source frame `source` plays.
+    fn output_frame(&self, source: f64) -> f64 {
+        match self.stretch {
+            Some(s) => s.plan.output_at(source - s.start as f64),
+            None => source,
+        }
+    }
+
+    /// Source frames per output frame at deck output frame `out`.
+    fn rate_at(&self, out: u64) -> f64 {
+        self.stretch.map_or(1.0, |s| s.plan.rate_at(out as f64))
+    }
+}
+
+/// A beat grid in source frames at the output rate.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Beats {
+    first: f64,
+    period: f64,
+}
+
+/// How a beatmatched deck plays: from `start_ms` (its first beat) along `plan`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Stretched {
+    plan: StretchPlan,
+    start_ms: u64,
+    /// `start_ms` in output-rate frames.
+    start: u64,
 }
 
 /// Where a track sits on its album.
@@ -339,6 +391,8 @@ struct Control {
     analysis_reported: Instant,
     /// The transition plan last sent to the mixer.
     plan_sent: Option<TransitionPlan>,
+    /// The playback rate last reported to the UI.
+    reported_rate: f64,
 }
 
 /// Which library roots a scan covers.
@@ -415,6 +469,7 @@ impl Control {
                     v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32
                 }),
             normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
+            beatmatch: read_setting(&reader, SETTING_BEATMATCH).is_none_or(|v| v != 0),
             volume: read_setting_str(&reader, SETTING_VOLUME)
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| v.is_finite())
@@ -464,6 +519,7 @@ impl Control {
             analysis_dirty: true,
             analysis_reported: Instant::now() - ANALYSIS_REPORT_EVERY,
             plan_sent: None,
+            reported_rate: 1.0,
         };
         let mut control = control;
         // The mixer starts at defaults; bring it to the stored settings.
@@ -537,10 +593,18 @@ impl Control {
     }
 
     fn position_ms(&self) -> u64 {
-        if self.current.is_some() {
-            self.position_frames * 1000 / u64::from(self.sample_rate)
-        } else {
-            self.resume_ms
+        match &self.current {
+            Some(l) => l.source_frame(self.position_frames) * 1000 / u64::from(self.sample_rate),
+            None => self.resume_ms,
+        }
+    }
+
+    /// Track time per wall-clock time right now (the UI extrapolates the position with it).
+    fn playback_rate(&self) -> f64 {
+        match (&self.current, self.status) {
+            (Some(l), Status::Playing) => l.rate_at(self.position_frames),
+            (None, Status::Playing) => 1.0,
+            _ => 0.0,
         }
     }
 
@@ -562,11 +626,7 @@ impl Control {
             entry: index.and_then(|i| self.queue.get(i)),
             position_ms: self.position_ms(),
             at: Instant::now(),
-            rate: if self.status == Status::Playing {
-                1.0
-            } else {
-                0.0
-            },
+            rate: self.playback_rate(),
             duration_ms,
         }));
     }
@@ -649,6 +709,7 @@ impl Control {
         entry: QueueEntry,
         start_ms: u64,
         after: Option<&Loaded>,
+        stretch: Option<Stretched>,
     ) -> (Loaded, dap_mixer::DeckInput) {
         let token = self.next_token;
         self.next_token += 1;
@@ -665,7 +726,8 @@ impl Control {
         let (input, info) = spawn_deck(
             token,
             path,
-            start_ms,
+            stretch.map_or(start_ms, |s| s.start_ms),
+            stretch.map(|s| s.plan),
             self.deck_gain(gain_db),
             self.sample_rate,
             self.channels,
@@ -679,6 +741,8 @@ impl Control {
                 gain_db,
                 album,
                 continues_album,
+                beats: self.beats(entry.track_id),
+                stretch,
             },
             input,
         )
@@ -689,7 +753,7 @@ impl Control {
         let Some(entry) = self.queue.get(index) else {
             return;
         };
-        let (loaded, input) = self.load(entry, start_ms, None);
+        let (loaded, input) = self.load(entry, start_ms, None, None);
         self.cursor = Some(entry.id);
         self.position_frames = input.start_frame;
         self.resume_ms = 0;
@@ -708,14 +772,18 @@ impl Control {
     /// Ensures the deck after the current item holds the right track (gapless preload).
     fn preload_next(&mut self) {
         let want = self.cursor_index().and_then(|i| self.queue.get(i + 1));
-        let have = self.next.as_ref().map(|l| l.entry.id);
-        if want.map(|e| e.id) == have {
+        let stretch = match (want, self.current.as_ref()) {
+            (Some(e), Some(current)) => self.beatmatch_for(current, e.track_id),
+            _ => None,
+        };
+        let have = self.next.as_ref().map(|l| (l.entry.id, l.stretch));
+        if want.map(|e| (e.id, stretch)) == have {
             return;
         }
         match want {
             Some(entry) if self.current.is_some() => {
                 let current = self.current.take();
-                let (loaded, input) = self.load(entry, 0, current.as_ref());
+                let (loaded, input) = self.load(entry, 0, current.as_ref(), stretch);
                 self.current = current;
                 self.next = Some(loaded);
                 self.send_mixer(MixerCommand::SetNext(input));
@@ -727,6 +795,94 @@ impl Control {
             }
         }
         self.prioritize_analysis();
+    }
+
+    /// Beat grid of a track from the stored analysis.
+    fn beats(&self, track_id: i64) -> Option<Beats> {
+        let (bpm, first_ms): (Option<f64>, Option<i64>) = self
+            .reader
+            .query_row(
+                "SELECT bpm, first_beat_ms FROM analysis WHERE track_id = ?1",
+                [track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()?;
+        let (bpm, first_ms) = (bpm.filter(|b| *b > 0.0)?, first_ms?);
+        let rate = f64::from(self.sample_rate);
+        Some(Beats {
+            first: first_ms.max(0) as f64 * rate / 1000.0,
+            period: 60.0 * rate / bpm,
+        })
+    }
+
+    /// How track `track_id` should play to be beatmatched into `current`, if it can be.
+    fn beatmatch_for(&self, current: &Loaded, track_id: i64) -> Option<Stretched> {
+        if !self.settings.beatmatch || self.settings.crossfade_ms == 0 {
+            return None;
+        }
+        // Album tracks that follow each other stay gapless.
+        if let (Some(prev), Some(next)) = (current.album, self.album_pos(track_id))
+            && prev.is_followed_by(next)
+        {
+            return None;
+        }
+        let out = current.beats?;
+        let inc = self.beats(track_id)?;
+        // Source frames per output frame that bring the incoming beats to the outgoing tempo.
+        let rate = inc.period / out.period;
+        if (rate - 1.0).abs() > BEATMATCH_MAX_TEMPO_GAP {
+            return None;
+        }
+        let phrase = (PHRASE_BEATS as f64 * out.period).round() as u64;
+        let start_ms = (inc.first * 1000.0 / f64::from(self.sample_rate)).round() as u64;
+        Some(Stretched {
+            plan: StretchPlan {
+                rate,
+                hold_frames: phrase,
+                ramp_frames: phrase,
+            },
+            start_ms,
+            start: start_ms * u64::from(self.sample_rate) / 1000,
+        })
+    }
+
+    /// A beatmatched transition out of `current` (ending at `end`): it starts on the last
+    /// phrase boundary that leaves room for a phrase, or on the last beat that does.
+    fn beatmatch_plan(&self, current: &Loaded, end: u64) -> Option<TransitionPlan> {
+        let beats = current.beats?;
+        let rate = u64::from(self.sample_rate);
+        // Positions arrive a little late: a transition about to start stays as planned.
+        let margin = rate / 2;
+        if let Some(p) = self.plan_sent
+            && p.token == current.token
+            && matches!(p.shape, TransitionShape::Beatmatch { .. })
+            && self.position_frames + margin >= p.start_frame
+        {
+            return Some(p);
+        }
+        let len = (PHRASE_BEATS as f64 * beats.period).round() as u64;
+        let latest = current.source_frame(end.checked_sub(len)?) as f64;
+        let k_max = ((latest - beats.first) / beats.period).floor();
+        if k_max < 0.0 {
+            return None;
+        }
+        let k_max = k_max as i64;
+        for k in [k_max - k_max.rem_euclid(PHRASE_BEATS), k_max] {
+            let start = current
+                .output_frame(beats.first + k as f64 * beats.period)
+                .round() as u64;
+            if start >= self.position_frames + margin && start + len <= end {
+                return Some(TransitionPlan {
+                    token: current.token,
+                    start_frame: start,
+                    end_frame: start + len,
+                    shape: TransitionShape::Beatmatch { swap: len / 2 },
+                });
+            }
+        }
+        None
     }
 
     /// The upcoming tracks are measured first, so they play normalized.
@@ -756,6 +912,11 @@ impl Control {
             return None;
         }
         let end = current.info.end_frame()?;
+        if next.stretch.is_some()
+            && let Some(plan) = self.beatmatch_plan(current, end)
+        {
+            return Some(plan);
+        }
         let rate = u64::from(self.sample_rate);
         // Short tracks fade for at most half their length.
         let mut len = (u64::from(self.settings.crossfade_ms) * rate / 1000).min(end / 2);
@@ -797,6 +958,23 @@ impl Control {
             if let Some((pending, total)) = self.analysis_counts() {
                 self.emit(Event::AnalysisProgress { pending, total });
             }
+        }
+        let mut grids_changed = false;
+        for &track_id in &done {
+            if let Some(current) = self.current.as_ref()
+                && current.entry.track_id == track_id
+            {
+                let beats = self.beats(track_id);
+                if let Some(current) = self.current.as_mut() {
+                    current.beats = beats;
+                }
+                grids_changed = true;
+            }
+            grids_changed |= self.next.as_ref().is_some_and(|n| n.entry.track_id == track_id);
+        }
+        if grids_changed {
+            // Beatmatching may be possible now (or no longer).
+            self.preload_next();
         }
         for track_id in done {
             let Some(next) = self.next.as_ref() else {
@@ -884,7 +1062,22 @@ impl Control {
         self.settings.crossfade_ms = ms;
         self.save_setting(SETTING_CROSSFADE, ms.to_string());
         self.emit(Event::Settings(self.settings));
+        if self.current.is_some() {
+            self.preload_next();
+        }
         // The plan follows on the next tick.
+    }
+
+    fn set_beatmatch(&mut self, on: bool) {
+        if self.settings.beatmatch == on {
+            return;
+        }
+        self.settings.beatmatch = on;
+        self.save_setting(SETTING_BEATMATCH, i64::from(on).to_string());
+        self.emit(Event::Settings(self.settings));
+        if self.current.is_some() {
+            self.preload_next();
+        }
     }
 
     fn stop(&mut self) {
@@ -1085,6 +1278,7 @@ impl Control {
             }
             Command::SetCrossfade { ms } => self.set_crossfade(ms),
             Command::SetNormalization(on) => self.set_normalization(on),
+            Command::SetBeatmatch(on) => self.set_beatmatch(on),
             Command::AddFolder(path) => {
                 let result = self.db.call(move |c| add_root(c, &path));
                 match result {
@@ -1246,6 +1440,12 @@ impl Control {
                 MixerEvent::Underrun { .. } => {}
                 MixerEvent::Trash(deck) => drop(deck),
             }
+        }
+        // A beatmatched track returning to its tempo: keep the UI's extrapolation right.
+        let rate = self.playback_rate();
+        if rate > 0.0 && (rate - self.reported_rate).abs() > 0.002 {
+            self.reported_rate = rate;
+            self.emit_state();
         }
     }
 

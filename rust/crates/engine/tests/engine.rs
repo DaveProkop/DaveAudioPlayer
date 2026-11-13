@@ -729,3 +729,91 @@ fn upcoming_items_can_be_reordered_and_the_order_persists() {
     engine.shutdown();
     assert_eq!(restored, wanted);
 }
+
+/// A mono WAV of 2 ms 2 kHz clicks at `beats` (seconds), silent otherwise.
+fn write_clicks(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>) {
+    let frames = (seconds * f64::from(RATE)) as usize;
+    let mut pcm = vec![0i16; frames];
+    let click = (RATE / 500) as usize;
+    for t in beats {
+        let at = (t * f64::from(RATE)).round() as usize;
+        for i in 0..click.min(frames.saturating_sub(at)) {
+            let phase = 2.0 * std::f64::consts::PI * 2000.0 * i as f64 / f64::from(RATE);
+            // Starts at a non-zero sample, so the click onset is exact.
+            pcm[at + i] = (20_000.0 * (phase + 0.5).sin()) as i16;
+        }
+    }
+    let data_len = (frames * 2) as u32;
+    let mut f = std::fs::File::create(path).unwrap();
+    let mut w = |b: &[u8]| f.write_all(b).unwrap();
+    w(b"RIFF");
+    w(&(36 + data_len).to_le_bytes());
+    w(b"WAVEfmt ");
+    w(&16u32.to_le_bytes());
+    w(&1u16.to_le_bytes());
+    w(&1u16.to_le_bytes());
+    w(&RATE.to_le_bytes());
+    w(&(RATE * 2).to_le_bytes());
+    w(&2u16.to_le_bytes());
+    w(&16u16.to_le_bytes());
+    w(b"data");
+    w(&data_len.to_le_bytes());
+    w(&pcm.iter().flat_map(|s| s.to_le_bytes()).collect::<Vec<_>>());
+}
+
+#[test]
+fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
+    let dir = TempDir::new("beatmatch");
+    // a: 120 BPM, first beat 0.25 s; clicks only in its first 2 s so that later the
+    // incoming track can be heard alone. b: 125 BPM, first beat 0.4 s.
+    write_clicks(&dir.music().join("a.wav"), 20.0, (0..4).map(|k| 0.25 + 0.5 * k as f64));
+    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.4 + 0.48 * k as f64));
+    let id = scan(&dir);
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, bpm, first) in [("a.wav", 120.0, 250), ("b.wav", 125.0, 400)] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
+                                       first_beat_ms, analyzed_at)
+                 VALUES (?1, ?2, ?3, 1.0, ?4, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first],
+            )
+            .unwrap();
+        }
+    }
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    // Index 0 = a's first beat. The transition starts on a's 16-beat phrase boundary
+    // that leaves room for 16 beats before a's end: beat 16 (8 s after the first beat).
+    let out = captured_from_first_sound(&capture);
+    let beat = f64::from(RATE) / 2.0;
+    let tolerance = f64::from(RATE) * 0.005;
+    // The incoming fade starts from silence: check from its third beat on.
+    for j in 2..16 {
+        let expected = (16 + j) as f64 * beat;
+        let (lo, hi) = ((expected - 0.4 * beat) as usize, (expected + 0.4 * beat) as usize);
+        let peak = lo
+            + out[lo..hi]
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+                .unwrap()
+                .0;
+        assert!(
+            (peak as f64 - expected).abs() < tolerance,
+            "beat {j}: click at {peak}, expected {expected} ({:.1} ms off)",
+            (peak as f64 - expected) / f64::from(RATE) * 1000.0
+        );
+        assert!(out[peak].abs() > 0.05, "beat {j}: no click ({})", out[peak]);
+    }
+}

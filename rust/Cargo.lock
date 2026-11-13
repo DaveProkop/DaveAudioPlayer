@@ -355,6 +355,7 @@ dependencies = [
  "dap-dsp",
  "dap-library",
  "dap-mixer",
+ "dap-stretch",
  "dap-tags",
  "notify",
  "rtrb",
