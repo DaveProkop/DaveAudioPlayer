@@ -252,3 +252,119 @@ pub fn edit_track(
         .map_err(|e| anyhow!(e.to_string()))?;
     Ok(error)
 }
+
+/// An album as far as an online lookup needs it.
+pub struct AlbumRef {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+}
+
+/// Albums (with playable tracks) that have no cover yet.
+pub fn albums_without_cover() -> Result<Vec<AlbumRef>> {
+    with_reader(|c| {
+        let mut st = c.prepare_cached(
+            "SELECT al.id, al.title,
+                    coalesce(aa.name, (SELECT a.name FROM track t2
+                                       JOIN track_artist ta ON ta.track_id = t2.id AND ta.role = 'main'
+                                       JOIN artist a ON a.id = ta.artist_id
+                                       WHERE t2.album_id = al.id LIMIT 1), '')
+             FROM album al LEFT JOIN artist aa ON aa.id = al.album_artist_id
+             WHERE al.cover_id IS NULL
+               AND EXISTS (SELECT 1 FROM track t JOIN file f ON f.id = t.file_id
+                           WHERE t.album_id = al.id AND f.missing = 0)
+             ORDER BY al.title_sort",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(AlbumRef {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                artist: r.get(2)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+/// Looks an album's front cover up on MusicBrainz / Cover Art Archive and gives it to the
+/// album. Returns whether a cover was found. A miss is remembered for 30 days unless
+/// `force`.
+pub fn find_album_cover(album_id: i64, force: bool) -> Result<bool> {
+    let album: Option<(String, String, Option<String>)> = with_reader(|c| {
+        c.query_row(
+            "SELECT al.title,
+                    coalesce(aa.name, (SELECT a.name FROM track t2
+                                       JOIN track_artist ta ON ta.track_id = t2.id AND ta.role = 'main'
+                                       JOIN artist a ON a.id = ta.artist_id
+                                       WHERE t2.album_id = al.id LIMIT 1), ''),
+                    al.mbid
+             FROM album al LEFT JOIN artist aa ON aa.id = al.album_artist_id
+             WHERE al.id = ?1",
+            [album_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+    })?;
+    let Some((title, artist, known_mbid)) = album else {
+        return Ok(false);
+    };
+    let key = album_id.to_string();
+    if !force {
+        let missed = with_reader(|c| {
+            c.query_row(
+                "SELECT fetched_at FROM metadata_cache WHERE provider = 'caa' AND lookup_key = ?1",
+                [&key],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+        })?
+        .is_some_and(|at| now_ms() - at < MISS_TTL_MS);
+        if missed {
+            return Ok(false);
+        }
+    }
+    let client = dap_metadata::client().map_err(|e| anyhow!(e.to_string()))?;
+    let net = |e: dap_metadata::MetadataError| anyhow!(e.to_string());
+    let mbid = match known_mbid {
+        Some(id) => Some(id),
+        None if !artist.is_empty() => {
+            dap_metadata::musicbrainz::find_release(&client, &artist, &title).map_err(net)?
+        }
+        None => None,
+    };
+    let image = match &mbid {
+        Some(id) => dap_metadata::musicbrainz::front_cover(&client, id).map_err(net)?,
+        None => None,
+    };
+    let dir = super::library::current_covers_dir()?;
+    let found = match image {
+        Some(bytes) => write(move |c| -> std::result::Result<bool, dap_library::DbError> {
+            let Some(cover_id) = dap_library::covers::store_cover(c, &dir, &bytes, "coverartarchive")?
+            else {
+                return Ok(false);
+            };
+            // mbid is unique: another album may hold it already.
+            c.execute(
+                "UPDATE album SET cover_id = ?2,
+                     mbid = coalesce(mbid, (SELECT ?3 WHERE NOT EXISTS
+                                            (SELECT 1 FROM album WHERE mbid = ?3)))
+                 WHERE id = ?1",
+                params![album_id, cover_id, mbid],
+            )?;
+            Ok(true)
+        })?
+        .map_err(|e| anyhow!(e.to_string()))?,
+        None => false,
+    };
+    if !found {
+        write(move |c| {
+            c.execute(
+                "INSERT INTO metadata_cache (provider, lookup_key, response, fetched_at)
+                 VALUES ('caa', ?1, '{}', ?2)
+                 ON CONFLICT (provider, lookup_key) DO UPDATE SET fetched_at = ?2",
+                params![key, now_ms()],
+            )
+        })??;
+    }
+    Ok(found)
+}

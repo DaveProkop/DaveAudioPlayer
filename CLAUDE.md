@@ -101,6 +101,8 @@ o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.
+Obaly alb online: MusicBrainz (hledání vydání, 1 dotaz/s) + Cover Art Archive (front-500),
+u alba bez obalu tlačítko, hromadně v nastavení; miss 30 dní (`metadata_cache` 'caa').
 Ruční úprava údajů skladby (`catalog::edit_track`: změněná pole do `tag_edit` → zamčená
 proti rescanu; volitelně zápis do tagů souboru přes `dap_tags::write_fields`).
 Texty písní: tag → soubor `.lrc` → LRCLIB (`dap-metadata`, reqwest blocking + rustls;

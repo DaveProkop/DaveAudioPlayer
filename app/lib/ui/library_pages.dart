@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import 'playlists.dart' show showAddToPlaylist;
+import '../src/rust/api/metadata.dart' show findAlbumCover;
 import 'folder_picker.dart';
 import 'widgets.dart';
 
@@ -411,6 +412,9 @@ class AlbumPage extends StatelessWidget {
             tracks: tracks,
             player: player,
             numbered: true,
+            actions: [
+              if (info.coverMedium == null) _FindCoverButton(player: player, albumId: info.id),
+            ],
           );
         },
       ),
@@ -539,6 +543,7 @@ class DetailScroll extends StatelessWidget {
     required this.numbered,
     this.albums,
     this.circle = false,
+    this.actions = const [],
   });
 
   final String? cover;
@@ -550,6 +555,9 @@ class DetailScroll extends StatelessWidget {
   final bool numbered;
   final List<AlbumInfo>? albums;
   final bool circle;
+
+  /// Extra buttons after the play buttons.
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -606,6 +614,7 @@ class DetailScroll extends StatelessWidget {
                   onPressed: tracks.isEmpty ? null : () => showAddToPlaylist(context, player, tracks),
                   icon: const Icon(Icons.library_add_outlined),
                 ),
+                ...actions,
               ],
             ),
           ],
@@ -681,5 +690,47 @@ class DetailScroll extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// Looks the album's cover up online (MusicBrainz, Cover Art Archive).
+class _FindCoverButton extends StatefulWidget {
+  const _FindCoverButton({required this.player, required this.albumId});
+
+  final PlayerController player;
+  final int albumId;
+
+  @override
+  State<_FindCoverButton> createState() => _FindCoverButtonState();
+}
+
+class _FindCoverButtonState extends State<_FindCoverButton> {
+  bool _busy = false;
+
+  Future<void> _find() async {
+    setState(() => _busy = true);
+    try {
+      final found = await findAlbumCover(albumId: widget.albumId, force: true);
+      widget.player.messages.add(found ? 'Obal nalezen' : 'Obal se na MusicBrainz nenašel');
+      if (found) widget.player.libraryEdited();
+    } catch (e) {
+      widget.player.messages.add('Obal se nepodařilo načíst: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _busy
+        ? const Padding(
+            padding: EdgeInsets.all(12),
+            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        : IconButton(
+            tooltip: 'Najít obal online (MusicBrainz)',
+            onPressed: _find,
+            icon: const Icon(Icons.image_search),
+          );
   }
 }

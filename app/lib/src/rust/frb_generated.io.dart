@@ -37,6 +37,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AlbumInfo dco_decode_album_info(dynamic raw);
 
   @protected
+  AlbumRef dco_decode_album_ref(dynamic raw);
+
+  @protected
   AppEvent dco_decode_app_event(dynamic raw);
 
   @protected
@@ -107,6 +110,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AlbumInfo> dco_decode_list_album_info(dynamic raw);
+
+  @protected
+  List<AlbumRef> dco_decode_list_album_ref(dynamic raw);
 
   @protected
   List<ArtistInfo> dco_decode_list_artist_info(dynamic raw);
@@ -262,6 +268,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AlbumInfo sse_decode_album_info(SseDeserializer deserializer);
 
   @protected
+  AlbumRef sse_decode_album_ref(SseDeserializer deserializer);
+
+  @protected
   AppEvent sse_decode_app_event(SseDeserializer deserializer);
 
   @protected
@@ -346,6 +355,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AlbumInfo> sse_decode_list_album_info(SseDeserializer deserializer);
+
+  @protected
+  List<AlbumRef> sse_decode_list_album_ref(SseDeserializer deserializer);
 
   @protected
   List<ArtistInfo> sse_decode_list_artist_info(SseDeserializer deserializer);
@@ -531,6 +543,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_album_info(AlbumInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_album_ref(AlbumRef self, SseSerializer serializer);
+
+  @protected
   void sse_encode_app_event(AppEvent self, SseSerializer serializer);
 
   @protected
@@ -634,6 +649,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<AlbumInfo> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_album_ref(List<AlbumRef> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_artist_info(

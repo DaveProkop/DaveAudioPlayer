@@ -6,6 +6,7 @@
 pub mod http;
 pub mod lrc;
 pub mod lrclib;
+pub mod musicbrainz;
 
 pub use http::{MetadataError, USER_AGENT, client};
 pub use lrc::{LrcLine, parse_lrc};

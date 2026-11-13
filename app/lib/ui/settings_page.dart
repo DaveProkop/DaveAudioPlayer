@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
+import '../src/rust/api/metadata.dart';
 import '../src/rust/api/player.dart' as rust;
 import 'folder_picker.dart';
 import 'library_pages.dart' show LibraryFuture;
@@ -120,6 +121,12 @@ class SettingsPage extends StatelessWidget {
                         value: s?.normalize ?? true,
                         onChanged: s == null ? null : (v) => rust.setNormalization(enabled: v),
                       ),
+                    ),
+                    ListTile(
+                      title: const Text('Doplnit chybějící obaly alb'),
+                      subtitle: const Text('Hledá na MusicBrainz a Cover Art Archive (asi 1 album za sekundu).'),
+                      trailing: const Icon(Icons.image_search),
+                      onTap: () => showFillCovers(context, player),
                     ),
                     SwitchListTile(
                       title: const Text('Hledat texty písní online'),
@@ -304,6 +311,86 @@ class _OutputDeviceTileState extends State<_OutputDeviceTile> {
           onTap: d == null ? null : () => _choose(d),
         );
       },
+    );
+  }
+}
+
+/// Looks covers up for every album without one, showing the progress.
+Future<void> showFillCovers(BuildContext context, PlayerController player) async {
+  final albums = await albumsWithoutCover();
+  if (!context.mounted) return;
+  if (albums.isEmpty) {
+    player.messages.add('Všechna alba mají obal');
+    return;
+  }
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _FillCoversDialog(player: player, albums: albums),
+  );
+}
+
+class _FillCoversDialog extends StatefulWidget {
+  const _FillCoversDialog({required this.player, required this.albums});
+
+  final PlayerController player;
+  final List<AlbumRef> albums;
+
+  @override
+  State<_FillCoversDialog> createState() => _FillCoversDialogState();
+}
+
+class _FillCoversDialogState extends State<_FillCoversDialog> {
+  int _done = 0;
+  int _found = 0;
+  bool _cancelled = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    for (final a in widget.albums) {
+      if (_cancelled || !mounted) break;
+      try {
+        if (await findAlbumCover(albumId: a.id, force: false)) _found++;
+      } catch (e) {
+        _error = '$e';
+        break; // offline or the service is down: no point in hammering it
+      }
+      if (mounted) setState(() => _done++);
+    }
+    if (_found > 0) widget.player.libraryEdited();
+    if (mounted) setState(() => _cancelled = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.albums.length;
+    final running = !_cancelled && _done < total && _error == null;
+    final current = running ? widget.albums[_done] : null;
+    return AlertDialog(
+      title: const Text('Doplnit obaly alb'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(value: total == 0 ? 1 : _done / total),
+          const SizedBox(height: 12),
+          Text('$_done z $total · nalezeno $_found'),
+          if (current != null) Text('${current.artist} – ${current.title}', maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (_error != null) Text('Přerušeno: $_error'),
+        ],
+      ),
+      actions: [
+        if (running)
+          TextButton(onPressed: () => setState(() => _cancelled = true), child: const Text('Zastavit'))
+        else
+          FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Hotovo')),
+      ],
     );
   }
 }

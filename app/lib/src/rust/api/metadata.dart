@@ -38,6 +38,42 @@ Future<String?> editTrack({
   writeToFile: writeToFile,
 );
 
+/// Albums (with playable tracks) that have no cover yet.
+Future<List<AlbumRef>> albumsWithoutCover() =>
+    RustLib.instance.api.crateApiMetadataAlbumsWithoutCover();
+
+/// Looks an album's front cover up on MusicBrainz / Cover Art Archive and gives it to the
+/// album. Returns whether a cover was found. A miss is remembered for 30 days unless
+/// `force`.
+Future<bool> findAlbumCover({
+  required PlatformInt64 albumId,
+  required bool force,
+}) => RustLib.instance.api.crateApiMetadataFindAlbumCover(
+  albumId: albumId,
+  force: force,
+);
+
+/// An album as far as an online lookup needs it.
+class AlbumRef {
+  final PlatformInt64 id;
+  final String title;
+  final String artist;
+
+  const AlbumRef({required this.id, required this.title, required this.artist});
+
+  @override
+  int get hashCode => id.hashCode ^ title.hashCode ^ artist.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AlbumRef &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          artist == other.artist;
+}
+
 class LyricLine {
   /// Start in ms, or -1 for plain (untimed) lyrics.
   final PlatformInt64 ms;
