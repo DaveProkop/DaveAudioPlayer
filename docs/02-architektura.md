@@ -54,6 +54,18 @@ Přesnost proti tóninám z tagů (266 skladeb, `cargo run --release -p dap-engi
 key_accuracy -- <db>`): přesně 67,7 %, smíchatelně (přesně, paralelní, soused) 85,3 %.
 Profily Krumhansl / Shaath / EDMA a logaritmická komprese vyšly hůř.
 
+## Tempo a Smart Mix řazení
+BPM (`analysis.bpm` + `bpm_confidence`): detekce v analyzátoru (verze 4) – spektrální tok
+(FFT 1024, hop 256), autokorelace s hřebenem přes 1–4 doby a log-normální preferencí kolem
+128 BPM, výsledek složený do 70–180 BPM. Tag BPM platí jen, když s ním detekce souhlasí (i
+poloviční/dvojnásobné tempo) nebo si není jistá – tagy bývají špatně (90 u DnB i hip-hopu).
+Měření (`--example bpm_accuracy`): bez chybných tagů 88,6 % do ±1 BPM, 8,9 % poloviční/dvojí.
+Řazení fronty pro mix (`dap_analysis::mix`): cena přechodu = tónina (vzdálenost na Camelot
+kolečku, změna dur/moll) + tempo (rozdíl v %, 1 bod za 3 %, poloviční/dvojí tempo blízko);
+hladový průchod od hrané skladby + 2-opt. UI ukáže návrh s počtem plynulých přechodů
+předtím a potom, `ReorderUpcoming` ho použije (jen skladby za hranou, ověří, že se fronta
+nezměnila). Beatmatch přechody (time-stretch) zatím ne.
+
 ## Vyrovnání hlasitosti
 Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true
 peak do tabulky `analysis` (`algo_version` = 1). Přednost má fronta za aktuální skladbou; na PC

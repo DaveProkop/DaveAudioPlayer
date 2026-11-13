@@ -86,6 +86,8 @@ navigace + mini přehrávač; knihovna, alba, interpreti, detail, právě hraje,
 Tónina (Camelot) u skladeb: z tagu (TKEY/INITIALKEY, i Open Key a názvy tónin), jinak odhad
 z chromagramu v analýze na pozadí (jistota < 1; tag má 1); štítky v seznamech a frontě,
 kompatibilní tóniny k právě hrané zvýrazněné.
+Tempo (BPM) z detekce/tagů (tag jen když souhlasí), Smart Mix řazení fronty (tónina + tempo,
+návrh s potvrzením).
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.1.0 (Windows zip, podepsané APK) je v `dist/`, release APK běží na telefonu.

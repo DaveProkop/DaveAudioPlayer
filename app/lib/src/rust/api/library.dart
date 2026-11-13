@@ -62,6 +62,19 @@ Future<LibraryStats> libraryStats() =>
 Future<TrackDetails?> trackDetails({required PlatformInt64 trackId}) =>
     RustLib.instance.api.crateApiLibraryTrackDetails(trackId: trackId);
 
+/// Smart Mix: an order for the upcoming queue items (`item_ids`, playing `track_ids` in
+/// the same order) where each track mixes well into the next by key and tempo, starting
+/// after `after_track` (the playing one). Returns the item ids in the proposed order.
+Future<Int64List> suggestMixOrder({
+  PlatformInt64? afterTrack,
+  required Int64List itemIds,
+  required Int64List trackIds,
+}) => RustLib.instance.api.crateApiLibrarySuggestMixOrder(
+  afterTrack: afterTrack,
+  itemIds: itemIds,
+  trackIds: trackIds,
+);
+
 /// A UI preference stored with [`super::player::set_ui_setting`].
 Future<String?> uiSetting({required String key}) =>
     RustLib.instance.api.crateApiLibraryUiSetting(key: key);

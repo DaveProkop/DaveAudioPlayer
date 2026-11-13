@@ -85,6 +85,8 @@ pub enum Command {
         to: usize,
     },
     RemoveQueueItem(usize),
+    /// Puts the items after the current one in this order (queue item ids; Smart Mix).
+    ReorderUpcoming(Vec<i64>),
     ClearQueue,
     /// Linear volume 0.0–1.0 (stored).
     SetVolume(f32),
@@ -1005,6 +1007,14 @@ impl Control {
                     self.queue.remove(&self.db, index);
                 }
                 self.queue_changed();
+            }
+            Command::ReorderUpcoming(ids) => {
+                let from = self.cursor_index().map_or(0, |i| i + 1);
+                if self.queue.reorder_tail(&self.db, from, &ids) {
+                    self.queue_changed();
+                } else {
+                    self.emit(Event::Error("fronta se mezitím změnila, řazení se nepoužilo".into()));
+                }
             }
             Command::ClearQueue => {
                 self.stop();

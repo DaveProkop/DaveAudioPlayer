@@ -398,6 +398,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
+ "dap-analysis",
  "dap-dsp",
  "dap-engine",
  "dap-library",

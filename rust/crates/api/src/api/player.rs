@@ -207,6 +207,12 @@ pub fn remove_queue_item(index: u32) -> Result<()> {
     send(Command::RemoveQueueItem(index as usize))
 }
 
+/// Smart Mix: puts the items after the playing one in this order (queue item ids from
+/// `suggest_mix_order`).
+pub fn reorder_upcoming(item_ids: Vec<i64>) -> Result<()> {
+    send(Command::ReorderUpcoming(item_ids))
+}
+
 pub fn clear_queue() -> Result<()> {
     send(Command::ClearQueue)
 }

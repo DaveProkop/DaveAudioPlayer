@@ -92,6 +92,11 @@ Future<void> moveQueueItem({required int from, required int to}) =>
 Future<void> removeQueueItem({required int index}) =>
     RustLib.instance.api.crateApiPlayerRemoveQueueItem(index: index);
 
+/// Smart Mix: puts the items after the playing one in this order (queue item ids from
+/// `suggest_mix_order`).
+Future<void> reorderUpcoming({required Int64List itemIds}) =>
+    RustLib.instance.api.crateApiPlayerReorderUpcoming(itemIds: itemIds);
+
 Future<void> clearQueue() => RustLib.instance.api.crateApiPlayerClearQueue();
 
 Future<void> addFolder({required String path}) =>

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
+
 import '../player_controller.dart';
+import '../src/rust/api/library.dart';
 import '../src/rust/api/player.dart' as rust;
 import 'theme.dart';
 import 'widgets.dart';
@@ -40,6 +43,13 @@ class QueueView extends StatelessWidget {
                         queue.isEmpty ? '' : '${tracksLabel(queue.length)} · ${formatLong(remainingMs)}',
                         style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Seřadit pro mix (tónina a tempo)',
+                      icon: const Icon(Icons.auto_awesome),
+                      onPressed: queue.length - (current ?? -1) - 1 < 2
+                          ? null
+                          : () => showMixSuggestion(context, player),
                     ),
                     IconButton(
                       tooltip: 'Vyprázdnit frontu',
@@ -199,4 +209,113 @@ class QueueView extends StatelessWidget {
       },
     );
   }
+}
+
+/// Whether one track mixes well into the next (key and tempo).
+bool smoothTransition(TrackInfo? a, TrackInfo? b) =>
+    a != null && b != null && keysCompatible(a.key, b.key) && tempoCompatible(a.bpm, b.bpm);
+
+int _smoothCount(TrackInfo? start, List<TrackInfo?> tracks) {
+  var n = 0;
+  var prev = start;
+  for (final t in tracks) {
+    if (smoothTransition(prev, t)) n++;
+    prev = t;
+  }
+  return n;
+}
+
+/// Smart Mix: proposes an order for the upcoming tracks where each one mixes into the
+/// next by key and tempo; applied only when the user confirms.
+Future<void> showMixSuggestion(BuildContext context, PlayerController player) async {
+  final current = player.currentIndex;
+  final from = current == null ? 0 : current + 1;
+  final upcoming = player.queue.sublist(from);
+  if (upcoming.length < 2) return;
+  final start = current == null ? null : player.track(player.queue[current].trackId);
+  final List<int> proposed;
+  try {
+    final ids = await suggestMixOrder(
+      afterTrack: start?.id,
+      itemIds: Int64List.fromList([for (final q in upcoming) q.id]),
+      trackIds: Int64List.fromList([for (final q in upcoming) q.trackId]),
+    );
+    proposed = [for (final v in ids) v.toInt()];
+  } catch (e) {
+    player.messages.add('Nelze navrhnout pořadí: $e');
+    return;
+  }
+  if (!context.mounted) return;
+  final trackOf = {for (final q in upcoming) q.id: player.track(q.trackId)};
+  final before = _smoothCount(start, [for (final q in upcoming) trackOf[q.id]]);
+  final after = _smoothCount(start, [for (final id in proposed) trackOf[id]]);
+  final unknown = upcoming.where((q) => trackOf[q.id]?.key == null || trackOf[q.id]?.bpm == null).length;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      final scheme = Theme.of(context).colorScheme;
+      TrackInfo? prev = start;
+      return AlertDialog(
+        title: const Text('Seřadit pro mix'),
+        content: SizedBox(
+          width: 460,
+          height: 460,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Plynulé přechody (tónina i tempo sedí): teď $before, po seřazení $after '
+                'z ${upcoming.length}.'
+                '${unknown > 0 ? ' $unknown skladeb ještě nemá změřenou tóninu nebo tempo.' : ''}',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final (i, id) in proposed.indexed)
+                      Builder(
+                        builder: (context) {
+                          final t = trackOf[id];
+                          final smooth = smoothTransition(prev, t);
+                          final row = ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: SizedBox(
+                              width: 28,
+                              child: Icon(
+                                smooth ? Icons.check_circle : Icons.swap_vert,
+                                size: 18,
+                                color: smooth ? context.appColors.ok : scheme.outline,
+                              ),
+                            ),
+                            title: Text('${i + 1}. ${t?.title ?? '…'}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(t?.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                BpmText(bpm: t?.bpm, reference: prev?.bpm),
+                                const SizedBox(width: 6),
+                                KeyBadge(musicKey: t?.key, reference: prev?.key),
+                              ],
+                            ),
+                          );
+                          prev = t;
+                          return row;
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Zrušit')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Použít pořadí')),
+        ],
+      );
+    },
+  );
+  if (ok == true) await rust.reorderUpcoming(itemIds: Int64List.fromList(proposed));
 }

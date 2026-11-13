@@ -1,0 +1,179 @@
+//! Smart Mix ordering: puts tracks in an order where each one mixes well into the next,
+//! by key (Camelot wheel) and tempo.
+
+use crate::key::Camelot;
+
+/// What the ordering knows about a track.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct MixTrack {
+    pub key: Option<Camelot>,
+    pub bpm: Option<f64>,
+}
+
+/// Cost of an unknown key or tempo: about as bad as a mediocre match.
+const UNKNOWN: f64 = 1.0;
+
+/// Key part of a transition's cost: 0 for the same key, small for the relative major/minor
+/// or a step around the wheel, growing with the distance on the wheel.
+pub fn key_cost(a: Option<Camelot>, b: Option<Camelot>) -> f64 {
+    let (Some(a), Some(b)) = (a, b) else {
+        return UNKNOWN;
+    };
+    let step = (i32::from(a.number) - i32::from(b.number)).rem_euclid(12);
+    let distance = f64::from(step.min(12 - step)); // 0–6 around the wheel
+    match (distance as i32, a.minor == b.minor) {
+        (0, true) => 0.0,
+        (0, false) => 0.3,
+        (1, true) => 0.5,
+        (1, false) => 1.5,
+        (_, same_mode) => 1.0 + distance * 0.7 + if same_mode { 0.0 } else { 0.5 },
+    }
+}
+
+/// Tempo part of a transition's cost: the gap in percent (half / double time counts as
+/// close), 1 unit per 3 %, capped.
+pub fn tempo_cost(a: Option<f64>, b: Option<f64>) -> f64 {
+    let (Some(a), Some(b)) = (a, b) else {
+        return UNKNOWN;
+    };
+    if a <= 0.0 || b <= 0.0 {
+        return UNKNOWN;
+    }
+    let gap = [1.0, 2.0, 0.5]
+        .iter()
+        .map(|r| (a / (b * r) - 1.0).abs())
+        .fold(f64::INFINITY, f64::min);
+    (gap / 0.03).min(4.0)
+}
+
+pub fn transition_cost(a: &MixTrack, b: &MixTrack) -> f64 {
+    key_cost(a.key, b.key) + tempo_cost(a.bpm, b.bpm)
+}
+
+fn path_cost(start: Option<&MixTrack>, tracks: &[MixTrack], order: &[usize]) -> f64 {
+    let mut cost = 0.0;
+    let mut prev = start;
+    for &i in order {
+        if let Some(p) = prev {
+            cost += transition_cost(p, &tracks[i]);
+        }
+        prev = Some(&tracks[i]);
+    }
+    cost
+}
+
+/// An order of `tracks` (indices) that keeps transitions cheap, starting after `start`
+/// (the playing track) if given. Greedy nearest neighbour, then 2-opt improvement.
+pub fn mix_order(start: Option<&MixTrack>, tracks: &[MixTrack]) -> Vec<usize> {
+    let n = tracks.len();
+    if n < 2 {
+        return (0..n).collect();
+    }
+    // Greedy: always the cheapest next track (ties keep the original order).
+    let mut used = vec![false; n];
+    let mut order = Vec::with_capacity(n);
+    let mut prev = start.copied();
+    for _ in 0..n {
+        let next = (0..n)
+            .filter(|&i| !used[i])
+            .min_by(|&i, &j| {
+                let ci = prev.map_or(0.0, |p| transition_cost(&p, &tracks[i]));
+                let cj = prev.map_or(0.0, |p| transition_cost(&p, &tracks[j]));
+                ci.total_cmp(&cj).then(i.cmp(&j))
+            })
+            .expect("a track left");
+        used[next] = true;
+        order.push(next);
+        prev = Some(tracks[next]);
+    }
+    // 2-opt: reverse a stretch when that makes the whole path cheaper (bounded passes).
+    let cost_between = |a: Option<usize>, b: usize, order: &[usize]| -> f64 {
+        match a {
+            Some(a) => transition_cost(&tracks[order[a]], &tracks[order[b]]),
+            None => start.map_or(0.0, |s| transition_cost(s, &tracks[order[b]])),
+        }
+    };
+    for _ in 0..20 {
+        let mut improved = false;
+        for i in 0..n - 1 {
+            for j in i + 1..n {
+                // Reversing order[i..=j] changes the edges (i-1, i) and (j, j+1).
+                let before_i = i.checked_sub(1);
+                let old = cost_between(before_i, i, &order)
+                    + if j + 1 < n { cost_between(Some(j), j + 1, &order) } else { 0.0 };
+                let new = cost_between(before_i, j, &order)
+                    + if j + 1 < n {
+                        transition_cost(&tracks[order[i]], &tracks[order[j + 1]])
+                    } else {
+                        0.0
+                    };
+                if new + 1e-9 < old {
+                    order[i..=j].reverse();
+                    improved = true;
+                }
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
+    debug_assert!(path_cost(start, tracks, &order).is_finite());
+    order
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t(key: &str, bpm: f64) -> MixTrack {
+        MixTrack {
+            key: Camelot::parse(key),
+            bpm: Some(bpm),
+        }
+    }
+
+    #[test]
+    fn costs() {
+        let k = |s| Camelot::parse(s);
+        assert_eq!(key_cost(k("8A"), k("8A")), 0.0);
+        assert!(key_cost(k("8A"), k("9A")) < key_cost(k("8A"), k("10A")));
+        assert!(key_cost(k("8A"), k("8B")) < key_cost(k("8A"), k("9B")));
+        assert_eq!(key_cost(k("12A"), k("1A")), 0.5, "the wheel wraps");
+        assert_eq!(tempo_cost(Some(128.0), Some(128.0)), 0.0);
+        assert!(tempo_cost(Some(87.0), Some(174.0)) < 0.01, "half time is close");
+        assert_eq!(tempo_cost(Some(90.0), Some(140.0)), 4.0, "capped");
+    }
+
+    #[test]
+    fn walks_the_wheel_instead_of_jumping() {
+        // Shuffled: 8A, 11A, 9A, 10A, all 124 BPM; start at 7A.
+        let tracks = [t("8A", 124.0), t("11A", 124.0), t("9A", 124.0), t("10A", 124.0)];
+        let order = mix_order(Some(&t("7A", 124.0)), &tracks);
+        assert_eq!(order, [0, 2, 3, 1]);
+    }
+
+    #[test]
+    fn groups_similar_tempos() {
+        let tracks = [t("8A", 174.0), t("8A", 124.0), t("8A", 172.0), t("8A", 126.0)];
+        let order = mix_order(Some(&t("8A", 125.0)), &tracks);
+        let bpms: Vec<f64> = order.iter().map(|&i| tracks[i].bpm.unwrap()).collect();
+        assert_eq!(&bpms[..2], &[126.0, 124.0], "{bpms:?}");
+        assert!(bpms[2] > 170.0 && bpms[3] > 170.0);
+    }
+
+    #[test]
+    fn is_a_permutation_and_never_worse_than_given() {
+        let keys = ["1A", "5B", "8A", "3A", "12B", "7A", "8B", "2A", "9A", "4B"];
+        let tracks: Vec<MixTrack> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| t(k, 110.0 + (i * 7 % 40) as f64))
+            .collect();
+        let order = mix_order(None, &tracks);
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..tracks.len()).collect::<Vec<_>>());
+        let identity: Vec<usize> = (0..tracks.len()).collect();
+        assert!(path_cost(None, &tracks, &order) <= path_cost(None, &tracks, &identity));
+    }
+}

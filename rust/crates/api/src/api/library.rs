@@ -423,6 +423,46 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
     })
 }
 
+/// Smart Mix: an order for the upcoming queue items (`item_ids`, playing `track_ids` in
+/// the same order) where each track mixes well into the next by key and tempo, starting
+/// after `after_track` (the playing one). Returns the item ids in the proposed order.
+pub fn suggest_mix_order(
+    after_track: Option<i64>,
+    item_ids: Vec<i64>,
+    track_ids: Vec<i64>,
+) -> Result<Vec<i64>> {
+    use dap_analysis::{Camelot, MixTrack, mix_order};
+    let info = |c: &Connection, id: i64| -> rusqlite::Result<MixTrack> {
+        let row: Option<(Option<String>, Option<f64>)> = c
+            .query_row(
+                "SELECT key_camelot, bpm FROM analysis WHERE track_id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (key, bpm) = row.unwrap_or_default();
+        Ok(MixTrack {
+            key: key.as_deref().and_then(Camelot::parse),
+            bpm,
+        })
+    };
+    let (start, tracks) = with_reader(|c| {
+        let start = after_track.map(|id| info(c, id)).transpose()?;
+        let tracks = track_ids
+            .iter()
+            .map(|&id| info(c, id))
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok((start, tracks))
+    })?;
+    if tracks.len() != item_ids.len() {
+        return Err(anyhow!("item_ids and track_ids differ in length"));
+    }
+    Ok(mix_order(start.as_ref(), &tracks)
+        .into_iter()
+        .map(|i| item_ids[i])
+        .collect())
+}
+
 /// A UI preference stored with [`super::player::set_ui_setting`].
 pub fn ui_setting(key: String) -> Result<Option<String>> {
     with_reader(|c| {

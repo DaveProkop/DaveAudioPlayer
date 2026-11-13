@@ -691,3 +691,41 @@ fn analysis_detects_keys_but_keeps_keys_from_tags() {
     let detected = key_of("plain.wav").unwrap().0;
     assert!(detected.as_deref().is_some_and(|k| dap_analysis::Camelot::parse(k).is_some()), "{detected:?}");
 }
+
+#[test]
+fn upcoming_items_can_be_reordered_and_the_order_persists() {
+    let dir = TempDir::new("reorder");
+    for name in ["a", "b", "c"] {
+        write_wav(&dir.music().join(format!("{name}.wav")), 1, 4410);
+    }
+    let id = scan(&dir);
+    let engine = start(&dir, None);
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav"), id("c.wav")],
+        at: None,
+    });
+    let queued = match wait_for(&engine, |e| matches!(e, Event::Queue(q) if q.len() == 3)).last() {
+        Some(Event::Queue(q)) => q.clone(),
+        _ => unreachable!(),
+    };
+    let ids: Vec<i64> = queued.iter().map(|e| e.id).collect();
+
+    // A list that is not exactly the upcoming items is refused.
+    engine.send(Command::ReorderUpcoming(vec![ids[0], ids[1]]));
+    wait_for(&engine, |e| matches!(e, Event::Error(_)));
+
+    let wanted = vec![ids[2], ids[0], ids[1]];
+    engine.send(Command::ReorderUpcoming(wanted.clone()));
+    wait_for(&engine, |e| {
+        matches!(e, Event::Queue(q) if q.iter().map(|x| x.id).collect::<Vec<_>>() == wanted)
+    });
+    engine.shutdown();
+
+    let engine = start(&dir, None);
+    let restored = match wait_for(&engine, |e| matches!(e, Event::Queue(_))).last() {
+        Some(Event::Queue(q)) => q.iter().map(|x| x.id).collect::<Vec<_>>(),
+        _ => unreachable!(),
+    };
+    engine.shutdown();
+    assert_eq!(restored, wanted);
+}

@@ -105,6 +105,39 @@ impl Queue {
         self.items.iter().map(|i| (i.entry.id, i.pos)).collect()
     }
 
+    /// Puts the items from index `from` on in the order of `ids`, which must be exactly
+    /// those items. Returns false (and changes nothing) when they are not.
+    pub fn reorder_tail(&mut self, db: &DbWriter, from: usize, ids: &[i64]) -> bool {
+        let from = from.min(self.items.len());
+        let mut tail: Vec<i64> = self.items[from..].iter().map(|i| i.entry.id).collect();
+        let mut wanted = ids.to_vec();
+        tail.sort_unstable();
+        wanted.sort_unstable();
+        if tail != wanted {
+            return false;
+        }
+        let by_id: std::collections::HashMap<i64, Item> =
+            self.items[from..].iter().map(|i| (i.entry.id, *i)).collect();
+        self.items.truncate(from);
+        self.items.extend(ids.iter().map(|id| by_id[id]));
+        // Fresh positions for everything: one write, no gaps to worry about.
+        for (n, item) in self.items.iter_mut().enumerate() {
+            item.pos = n as f64;
+        }
+        let rows = self.renumber_job();
+        db.run(move |conn| {
+            let _ = (|| -> Result<()> {
+                let tx = conn.transaction()?;
+                for (id, pos) in rows {
+                    tx.execute("UPDATE queue_item SET pos = ?2 WHERE id = ?1", params![id, pos])?;
+                }
+                tx.commit()?;
+                Ok(())
+            })();
+        });
+        true
+    }
+
     /// Inserts tracks before index `at` (clamped to the end).
     pub fn insert(
         &mut self,

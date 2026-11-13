@@ -125,7 +125,8 @@ Future<void> _writeLibrary(Directory music) async {
         'TALB': album,
         'TRCK': '${i + 1}/${titles.length}',
         'TDRC': '$year',
-        'TKEY': keys[k++ % keys.length],
+        'TKEY': keys[k % keys.length],
+        'TBPM': '${[124, 128, 126, 174, 122, 140, 125, 172][k++ % 8]}',
       }));
     }
   }
@@ -203,6 +204,19 @@ void main() {
     await shot('desktop_settings');
     await tapText('Interpreti');
     await shot('desktop_artists');
+
+    // Smart Mix: the whole library in the queue, then the proposed order.
+    await tester.runAsync(() async {
+      final all = await libraryPage(offset: 0, limit: 100);
+      await player.playAll(all);
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    });
+    await settle();
+    await tester.tap(find.byIcon(Icons.auto_awesome).first);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 500)));
+    await shot('desktop_mix');
+    await tapText('Použít pořadí');
+    await shot('desktop_mix_applied');
 
     // ----- mobile -----
     tester.view.physicalSize = const Size(412, 900);
