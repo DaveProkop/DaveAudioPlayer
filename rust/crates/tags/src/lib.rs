@@ -250,7 +250,7 @@ pub fn write_fields(path: &Path, fields: &[(&str, Option<String>)]) -> Result<()
                 "disc_no" => ItemKey::DiscNumber,
                 _ => continue,
             };
-            tag.remove_key(key.clone());
+            tag.remove_key(key);
             if let Some(v) = value.as_ref().filter(|v| !v.is_empty()) {
                 tag.insert_text(key, v.clone());
             }
