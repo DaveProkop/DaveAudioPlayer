@@ -4,9 +4,11 @@
 //! empty), the mixer switches to the preloaded next deck within the same callback, so
 //! not a single frame of silence is inserted between tracks.
 //!
-//! Crossfade: the control thread sends a [`TransitionPlan`] for the current deck. When the
-//! deck reaches the plan's start frame, the next deck becomes current and the old one keeps
-//! playing as the outgoing deck until the plan's end, with equal-power gain curves.
+//! Transitions: the control thread sends a [`TransitionPlan`] for the current deck. When
+//! the deck reaches the plan's start frame, the next deck becomes current and the old one
+//! keeps playing as the outgoing deck until the plan's end, blended as the plan's
+//! [`TransitionShape`] says (crossfade, beatmatch, filter sweep, echo out). The mixer only
+//! evaluates these curves; choosing them is the control thread's job.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +32,19 @@ const SCRATCH_FRAMES: usize = 1024;
 /// The bass band for beatmatch transitions, and how fast the basses swap.
 const BASS_HZ: f64 = 150.0;
 const BASS_SWAP_MS: f64 = 30.0;
+/// Filter sweep: the outgoing high-pass rises from / to these cutoffs, the incoming
+/// low-pass opens from / to these (capped below Nyquist).
+const SWEEP_HP_HZ: (f64, f64) = (20.0, 2000.0);
+const SWEEP_LP_HZ: (f64, f64) = (250.0, 18_000.0);
+/// Filter coefficients are updated this often during a sweep (frames).
+const SWEEP_UPDATE_FRAMES: u64 = 32;
+/// Echo out: the longest echo delay, the feedback, the echo level and the band fed into it.
+const ECHO_MAX_DELAY_S: f64 = 2.0;
+const ECHO_FEEDBACK: f32 = 0.5;
+const ECHO_WET: f32 = 0.8;
+const ECHO_HP_HZ: f64 = 250.0;
+/// Echo out: how fast the outgoing deck is cut and the incoming one comes in.
+const ECHO_CUT_MS: f64 = 5.0;
 
 /// Audio for one track, filled by a deck decoder thread.
 pub struct DeckInput {
@@ -65,6 +80,13 @@ pub enum TransitionShape {
     /// basses swap at `swap` frames into the transition (a bar line), then the outgoing
     /// deck fades out.
     Beatmatch { swap: u64 },
+    /// Equal-power crossfade while a rising high-pass thins the outgoing deck and an
+    /// opening low-pass brings in the incoming one (tracks of different tempo).
+    FilterSweep,
+    /// The outgoing deck plays `feed` more frames (its last beat) into an echo and stops;
+    /// the incoming deck comes in cleanly at `feed` while the echoes die away until the end.
+    /// The echo repeats every `feed` frames (at most 2 s).
+    EchoOut { feed: u64 },
 }
 
 /// A deck in use, with its smoothed gain and bass control.
@@ -73,7 +95,51 @@ struct Slot {
     gain: LinearSmoother,
     /// 1 = full bass, 0 = bass removed (used during beatmatch transitions).
     bass: LinearSmoother,
-    bass_state: [BiquadState; MAX_CHANNELS],
+    /// State of the transition filter (bass cut or sweep), per channel.
+    filter_state: [BiquadState; MAX_CHANNELS],
+}
+
+/// Effects state for transitions, allocated up front (the audio thread never allocates).
+struct TransitionFx {
+    rate: f64,
+    bass_lp: BiquadCoeffs,
+    sweep_hp: BiquadCoeffs,
+    sweep_lp: BiquadCoeffs,
+    /// Echo delay line, interleaved, and its current length and position (frames).
+    echo: Vec<f32>,
+    echo_len: usize,
+    echo_pos: usize,
+    echo_hp: BiquadCoeffs,
+    echo_state: [BiquadState; MAX_CHANNELS],
+    cut_frames: u64,
+}
+
+impl TransitionFx {
+    fn new(rate: f64, channels: usize) -> Self {
+        let q = std::f64::consts::FRAC_1_SQRT_2;
+        Self {
+            rate,
+            bass_lp: BiquadCoeffs::low_pass(rate, BASS_HZ, q),
+            sweep_hp: BiquadCoeffs::default(),
+            sweep_lp: BiquadCoeffs::default(),
+            echo: vec![0.0; (ECHO_MAX_DELAY_S * rate) as usize * channels],
+            echo_len: 1,
+            echo_pos: 0,
+            echo_hp: BiquadCoeffs::high_pass(rate, ECHO_HP_HZ, q),
+            echo_state: [BiquadState::default(); MAX_CHANNELS],
+            cut_frames: ((ECHO_CUT_MS * rate / 1000.0) as u64).max(1),
+        }
+    }
+
+    /// Filter cutoffs for sweep progress `t` (0..1), exponential in frequency.
+    fn set_sweep(&mut self, t: f64) {
+        let q = std::f64::consts::FRAC_1_SQRT_2;
+        let lp_max = SWEEP_LP_HZ.1.min(self.rate * 0.45);
+        let hp = SWEEP_HP_HZ.0 * (SWEEP_HP_HZ.1 / SWEEP_HP_HZ.0).powf(t);
+        let lp = SWEEP_LP_HZ.0 * (lp_max / SWEEP_LP_HZ.0).powf(t);
+        self.sweep_hp = BiquadCoeffs::high_pass(self.rate, hp, q);
+        self.sweep_lp = BiquadCoeffs::low_pass(self.rate, lp, q);
+    }
 }
 
 /// A transition in progress: the outgoing deck and how far the fade has got.
@@ -114,7 +180,10 @@ pub enum MixerCommand {
     /// Back to gapless: the next deck starts when the current one ends.
     ClearTransition,
     /// Changes the gain of a loaded deck (current, next or outgoing), with a short ramp.
-    SetDeckGain { token: u64, gain: f32 },
+    SetDeckGain {
+        token: u64,
+        gain: f32,
+    },
 }
 
 pub enum MixerEvent {
@@ -158,7 +227,7 @@ pub struct Mixer {
     scratch: Vec<f32>,
     deck_gain_ramp: u32,
     bass_ramp: u32,
-    bass_lp: BiquadCoeffs,
+    fx: TransitionFx,
     /// Position of the current deck in output frames.
     frames: u64,
     cmd_rx: rtrb::Consumer<MixerCommand>,
@@ -188,7 +257,7 @@ pub fn mixer(sample_rate: u32, channels: usize) -> (Mixer, MixerControl) {
         scratch: vec![0.0; SCRATCH_FRAMES * channels],
         deck_gain_ramp: (DECK_GAIN_RAMP_MS * rate / 1000.0) as u32,
         bass_ramp: (BASS_SWAP_MS * rate / 1000.0) as u32,
-        bass_lp: BiquadCoeffs::low_pass(rate, BASS_HZ, std::f64::consts::FRAC_1_SQRT_2),
+        fx: TransitionFx::new(rate, channels),
         frames: 0,
         cmd_rx,
         evt_tx,
@@ -328,12 +397,24 @@ impl Mixer {
         }
         let mut outgoing = outgoing;
         let mut next = self.next.take().expect("next deck");
-        if matches!(plan.shape, TransitionShape::Beatmatch { .. }) {
-            // The incoming deck starts without bass; the basses swap mid-transition.
-            outgoing.bass.set_immediate(1.0);
-            outgoing.bass_state = [BiquadState::default(); MAX_CHANNELS];
-            next.bass.set_immediate(0.0);
-            next.bass_state = [BiquadState::default(); MAX_CHANNELS];
+        outgoing.filter_state = [BiquadState::default(); MAX_CHANNELS];
+        next.filter_state = [BiquadState::default(); MAX_CHANNELS];
+        match plan.shape {
+            TransitionShape::Crossfade => {}
+            TransitionShape::Beatmatch { .. } => {
+                // The incoming deck starts without bass; the basses swap mid-transition.
+                outgoing.bass.set_immediate(1.0);
+                next.bass.set_immediate(0.0);
+            }
+            TransitionShape::FilterSweep => self.fx.set_sweep(0.0),
+            TransitionShape::EchoOut { feed } => {
+                let ch = self.channels;
+                let fx = &mut self.fx;
+                fx.echo_len = (feed as usize).clamp(1, fx.echo.len() / ch);
+                fx.echo_pos = 0;
+                fx.echo[..fx.echo_len * ch].fill(0.0);
+                fx.echo_state = [BiquadState::default(); MAX_CHANNELS];
+            }
         }
         self.fade = Some(Fade {
             outgoing,
@@ -355,7 +436,7 @@ impl Mixer {
         let frames = out.len() / ch;
         let mut i = std::mem::take(&mut fade.offset);
         let half_pi = std::f64::consts::FRAC_PI_2;
-        let lp = self.bass_lp;
+        let fx = &mut self.fx;
         let mut incoming = self.current.as_mut();
         while i < frames && fade.pos < fade.len {
             let chunk = (frames - i)
@@ -372,10 +453,45 @@ impl Mixer {
                 .enumerate()
             {
                 let pos = fade.pos + j as u64;
+                let mut wet = [0.0f32; MAX_CHANNELS];
                 let (fade_in, fade_out) = match fade.shape {
                     TransitionShape::Crossfade => {
                         let t = pos as f64 / fade.len as f64 * half_pi;
                         (t.sin(), t.cos())
+                    }
+                    TransitionShape::FilterSweep => {
+                        let t = pos as f64 / fade.len as f64;
+                        if pos.is_multiple_of(SWEEP_UPDATE_FRAMES) {
+                            fx.set_sweep(t);
+                        }
+                        filter(&mut fade.outgoing.filter_state, &fx.sweep_hp, s);
+                        if let Some(inc) = incoming.as_deref_mut() {
+                            filter(&mut inc.filter_state, &fx.sweep_lp, o);
+                        }
+                        ((t * half_pi).sin(), (t * half_pi).cos())
+                    }
+                    TransitionShape::EchoOut { feed } => {
+                        let feed = feed.min(fade.len);
+                        let k = fx.echo_pos * ch;
+                        // The echo dies away linearly by the end of the transition.
+                        let level = ECHO_WET * (1.0 - pos as f32 / fade.len as f32);
+                        for c in 0..ch {
+                            let delayed = fx.echo[k + c];
+                            let input = if pos < feed {
+                                fx.echo_state[c].process(&fx.echo_hp, f64::from(s[c])) as f32
+                            } else {
+                                0.0
+                            };
+                            fx.echo[k + c] = input + delayed * ECHO_FEEDBACK;
+                            wet[c] = delayed * level;
+                        }
+                        fx.echo_pos = (fx.echo_pos + 1) % fx.echo_len;
+                        // Short ramps at `feed` avoid clicks: out goes the old, in the new.
+                        let ramp = |p: u64| {
+                            (p.saturating_sub(feed) as f64 / fx.cut_frames as f64).min(1.0)
+                        };
+                        let r = if pos < feed { 0.0 } else { ramp(pos) };
+                        ((r * half_pi).sin(), (r * half_pi).cos())
                     }
                     TransitionShape::Beatmatch { swap } => {
                         let swap = swap.clamp(1, fade.len - 1);
@@ -394,14 +510,14 @@ impl Mixer {
                     }
                 };
                 if matches!(fade.shape, TransitionShape::Beatmatch { .. }) {
-                    apply_bass(&mut fade.outgoing, &lp, s);
+                    apply_bass(&mut fade.outgoing, &fx.bass_lp, s);
                     if let Some(inc) = incoming.as_deref_mut() {
-                        apply_bass(inc, &lp, o);
+                        apply_bass(inc, &fx.bass_lp, o);
                     }
                 }
                 let (fade_in, fade_out) = (fade_in as f32, fade_out as f32);
-                for (o, s) in o.iter_mut().zip(s.iter()) {
-                    *o = *o * fade_in + *s * fade_out;
+                for ((o, s), w) in o.iter_mut().zip(s.iter()).zip(wet) {
+                    *o = *o * fade_in + *s * fade_out + w;
                 }
             }
             fade.pos += chunk as u64;
@@ -431,7 +547,7 @@ impl Mixer {
         Slot {
             gain: LinearSmoother::new(sanitize_gain(deck.gain), self.deck_gain_ramp),
             bass: LinearSmoother::new(1.0, self.bass_ramp),
-            bass_state: [BiquadState::default(); MAX_CHANNELS],
+            filter_state: [BiquadState::default(); MAX_CHANNELS],
             deck,
         }
     }
@@ -560,9 +676,17 @@ fn sanitize_gain(gain: f32) -> f32 {
 #[inline]
 fn apply_bass(slot: &mut Slot, lp: &BiquadCoeffs, frame: &mut [f32]) {
     let g = f64::from(slot.bass.next_value());
-    for (x, state) in frame.iter_mut().zip(slot.bass_state.iter_mut()) {
+    for (x, state) in frame.iter_mut().zip(slot.filter_state.iter_mut()) {
         let low = state.process(lp, f64::from(*x));
         *x += ((g - 1.0) * low) as f32;
+    }
+}
+
+/// Runs one frame through a filter, one state per channel.
+#[inline]
+fn filter(states: &mut [BiquadState; MAX_CHANNELS], c: &BiquadCoeffs, frame: &mut [f32]) {
+    for (x, state) in frame.iter_mut().zip(states.iter_mut()) {
+        *x = state.process(c, f64::from(*x)) as f32;
     }
 }
 
@@ -821,7 +945,10 @@ mod tests {
         assert_eq!(frame(1000), 0.5, "only the next deck after the end");
         assert_eq!(frame(1499), 0.5);
         assert_eq!(events(&mut ctl), ["start 1", "start 2", "end 1", "trash 1"]);
-        assert_eq!(m.frames, 900, "position counts from the start of the next track");
+        assert_eq!(
+            m.frames, 900,
+            "position counts from the start of the next track"
+        );
     }
 
     #[test]
@@ -850,7 +977,132 @@ mod tests {
         assert!((at(1000 + 7000) - 1.0).abs() < 0.02, "{}", at(8000));
         // After the swap: the incoming deck with its bass, the outgoing one without.
         assert!((at(1000 + 12_000) - 0.5).abs() < 0.02, "{}", at(13_000));
-        assert!((at(17_500) - 0.5).abs() < 1e-6, "after the transition: {}", at(17_500));
+        assert!(
+            (at(17_500) - 0.5).abs() < 1e-6,
+            "after the transition: {}",
+            at(17_500)
+        );
+        assert_eq!(events(&mut ctl), ["start 1", "start 2", "end 1", "trash 1"]);
+    }
+
+    /// A stereo sine deck.
+    fn tone_deck(token: u64, freq: f64, frames: usize) -> DeckInput {
+        let (mut tx, rx) = pcm_ring(frames.max(1), 2);
+        let samples: Vec<f32> = (0..frames)
+            .flat_map(|i| {
+                let v = (2.0 * std::f64::consts::PI * freq * i as f64 / f64::from(RATE)).sin();
+                [v as f32, v as f32]
+            })
+            .collect();
+        assert_eq!(tx.push(&samples), samples.len());
+        DeckInput {
+            token,
+            rx,
+            finished: Arc::new(AtomicBool::new(true)),
+            start_frame: 0,
+            gain: 1.0,
+        }
+    }
+
+    /// RMS and mean of the left channel over frames `from..to`.
+    fn stats(out: &[f32], from: usize, to: usize) -> (f32, f32) {
+        let left: Vec<f32> = out[from * 2..to * 2].iter().step_by(2).copied().collect();
+        let n = left.len() as f32;
+        let rms = (left.iter().map(|x| x * x).sum::<f32>() / n).sqrt();
+        (rms, left.iter().sum::<f32>() / n)
+    }
+
+    fn transition(
+        m: &mut Mixer,
+        ctl: &mut MixerControl,
+        a: DeckInput,
+        b: DeckInput,
+        plan: TransitionPlan,
+        frames: usize,
+    ) -> Vec<f32> {
+        ctl.send(MixerCommand::SetCurrent(a)).ok().unwrap();
+        ctl.send(MixerCommand::SetNext(b)).ok().unwrap();
+        ctl.send(MixerCommand::SetTransition(plan)).ok().unwrap();
+        let mut out = vec![0.0; 2 * frames];
+        m.render(&mut out);
+        out
+    }
+
+    #[test]
+    fn filter_sweep_thins_the_outgoing_and_opens_the_incoming_deck() {
+        let plan = TransitionPlan {
+            token: 1,
+            start_frame: 1000,
+            end_frame: 41_000,
+            shape: TransitionShape::FilterSweep,
+        };
+        // Outgoing 100 Hz: by three quarters the high-pass (~630 Hz) has removed it,
+        // where a plain crossfade would still play it at 0.38.
+        let (mut m, mut ctl) = playing_mixer();
+        let out = transition(
+            &mut m,
+            &mut ctl,
+            tone_deck(1, 100.0, 60_000),
+            const_deck(2, 0.0, 60_000),
+            plan,
+            45_000,
+        );
+        assert!(stats(&out, 0, 1000).0 > 0.6, "before");
+        let (rms, _) = stats(&out, 30_000, 32_000);
+        assert!(rms < 0.03, "outgoing bass at 3/4: {rms}");
+        // Incoming 5 kHz: at a quarter the low-pass (~730 Hz) still holds it back.
+        let (mut m, mut ctl) = playing_mixer();
+        let out = transition(
+            &mut m,
+            &mut ctl,
+            const_deck(1, 0.0, 60_000),
+            tone_deck(2, 5000.0, 60_000),
+            plan,
+            45_000,
+        );
+        let (rms, _) = stats(&out, 10_000, 12_000);
+        assert!(rms < 0.03, "incoming treble at 1/4: {rms}");
+        let (rms, _) = stats(&out, 42_000, 44_000);
+        assert!((rms - 0.707).abs() < 0.02, "after: {rms}");
+    }
+
+    #[test]
+    fn echo_out_cuts_on_the_beat_and_lets_the_echo_die_away() {
+        let (mut m, mut ctl) = playing_mixer();
+        let feed = 4800;
+        let plan = TransitionPlan {
+            token: 1,
+            start_frame: 1000,
+            end_frame: 1000 + 5 * feed as u64,
+            shape: TransitionShape::EchoOut { feed: feed as u64 },
+        };
+        // Outgoing 1 kHz tone, incoming DC 0.5 (the mean tells it apart).
+        let out = transition(
+            &mut m,
+            &mut ctl,
+            tone_deck(1, 1000.0, 60_000),
+            const_deck(2, 0.5, 60_000),
+            plan,
+            30_000,
+        );
+        let (rms, mean) = stats(&out, 1000, 1000 + feed);
+        assert!(
+            (rms - 0.707).abs() < 0.02 && mean.abs() < 0.01,
+            "last beat: {rms} {mean}"
+        );
+        // After the cut: the incoming deck at full level plus the echo of the last beat.
+        let echo1 = stats(&out, 1000 + feed + 100, 1000 + 2 * feed);
+        let echo3 = stats(&out, 1000 + 3 * feed, 1000 + 4 * feed);
+        assert!((echo1.1 - 0.5).abs() < 0.02, "incoming: {}", echo1.1);
+        let (e1, e3) = (
+            (echo1.0.powi(2) - 0.25).sqrt(),
+            (echo3.0.powi(2) - 0.25).sqrt(),
+        );
+        assert!(e1 > 0.2 && e3 < e1 / 2.0, "echoes {e1} then {e3}");
+        assert!(
+            out[(1000 + 5 * feed + 100) * 2..].iter().all(|&x| x == 0.5),
+            "echo gone"
+        );
         assert_eq!(events(&mut ctl), ["start 1", "start 2", "end 1", "trash 1"]);
     }
 
@@ -887,7 +1139,10 @@ mod tests {
         .ok()
         .unwrap();
         m.render(&mut out);
-        assert!(out.iter().all(|&s| s == 1.0), "plan for another deck: gapless");
+        assert!(
+            out.iter().all(|&s| s == 1.0),
+            "plan for another deck: gapless"
+        );
     }
 
     #[test]
@@ -938,7 +1193,11 @@ mod tests {
         .unwrap();
         let mut ramp = vec![0.0; 2 * 2400]; // 50 ms
         m.render(&mut ramp);
-        assert!(ramp[0] > 0.5 && ramp[0] < 0.51, "ramps, no jump: {}", ramp[0]);
+        assert!(
+            ramp[0] > 0.5 && ramp[0] < 0.51,
+            "ramps, no jump: {}",
+            ramp[0]
+        );
         assert_eq!(ramp[ramp.len() - 1], 1.0);
     }
 

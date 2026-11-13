@@ -77,6 +77,21 @@ skladba s crossfadem začne od `audio_start_ms`. Navazující skladby alba a cro
 neořezávají. Kontrola na knihovně: `--example bounds_report -- <db> [počet]`, nebo
 `-- <soubor>` pro průběh hlasitosti po 5 s.
 
+## Výběr typu přechodu
+Při nahrání dalšího decku (`incoming_for`, nastavení `player.smart_transitions`, jen se
+zapnutým crossfadem, ne navazující skladby alba) řídicí vlákno zvolí `Mix`:
+- tempo do 8 % → **beatmatch** (níže),
+- jiné tempo, kompatibilní nebo neznámá tónina → **filter sweep**: délka podle crossfadu,
+  stejné výkonové křivky, odcházející přes high-pass 20 Hz → 2 kHz, příchozí přes low-pass
+  250 Hz → 18 kHz (exponenciálně, koeficienty každých 32 snímků),
+- jiné tempo i nekompatibilní tónina (Camelot) → **echo out**: začne na poslední hranici
+  taktu, kam se vejde 5 dob; odcházející dohraje jednu dobu do echa (zpoždění 1 doba,
+  zpětná vazba 0,5, high-pass 250 Hz, utichá lineárně do konce) a během 5 ms skončí;
+  příchozí je nahraná od (první doba − 1 doba odcházející), takže její první doba padne
+  přesně na střih,
+- bez změřeného tempa → crossfade.
+Mixer jen vyhodnocuje `TransitionShape`; zpožďovací linka (max 2 s) je předalokovaná.
+
 ## Beatmatch přechody
 Analyzátor (verze 5) ukládá i mřížku dob: přesné BPM a `first_beat_ms` (fáze dob z basové
 obálky na začátku a konci skladby, perioda z počtu dob mezi nimi). Když mají sousední

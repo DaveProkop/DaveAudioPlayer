@@ -8,6 +8,7 @@ pub mod mixer;
 pub mod ring;
 
 pub use mixer::{
-    DeckInput, Mixer, MixerCommand, MixerControl, MixerEvent, TransitionPlan, TransitionShape, mixer,
+    DeckInput, Mixer, MixerCommand, MixerControl, MixerEvent, TransitionPlan, TransitionShape,
+    mixer,
 };
 pub use ring::{PcmConsumer, PcmProducer, pcm_ring};

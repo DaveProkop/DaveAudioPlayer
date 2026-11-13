@@ -113,13 +113,14 @@ class SettingsPage extends StatelessWidget {
                       ),
                     ),
                     SwitchListTile(
-                      title: const Text('Beatmatch'),
+                      title: const Text('Chytré přechody'),
                       subtitle: const Text(
-                        'Skladby s podobným tempem se srovnají do rytmu: nová nastoupí na dobu, '
-                        'basy se prohodí na hranici taktu a tempo se pak plynule vrátí. Ostatní se prolnou.',
+                        'Podobné tempo: beatmatch (nástup na dobu, prohození basů). Jiné tempo: přechod '
+                        'filtrem. Jiné tempo i nesourodá tónina: echo na poslední době. Bez změřeného '
+                        'tempa obyčejné prolnutí.',
                       ),
-                      value: s?.beatmatch ?? true,
-                      onChanged: s == null || (s.crossfadeMs == 0) ? null : (v) => rust.setBeatmatch(enabled: v),
+                      value: s?.smartTransitions ?? true,
+                      onChanged: s == null || (s.crossfadeMs == 0) ? null : (v) => rust.setSmartTransitions(enabled: v),
                     ),
                     LibraryFuture<LibraryStats>(
                       player: player,

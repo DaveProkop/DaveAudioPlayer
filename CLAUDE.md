@@ -89,7 +89,9 @@ z chromagramu v analýze na pozadí (jistota < 1; tag má 1); štítky v sezname
 kompatibilní tóniny k právě hrané zvýrazněné.
 Tempo (BPM) z detekce/tagů (tag jen když souhlasí), Smart Mix řazení fronty (tónina + tempo,
 návrh s potvrzením). Beatmatch přechody (mřížka dob, time-stretch `dap-stretch`, nástup na
-dobu, prohození basů, návrat tempa; přepínač v nastavení).
+dobu, prohození basů, návrat tempa). Chytré přechody podle páru skladeb: beatmatch,
+filter sweep (jiné tempo), echo out (jiné tempo i tónina), jinak crossfade; přepínač
+v nastavení.
 Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade-outu po poklesu
 o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),

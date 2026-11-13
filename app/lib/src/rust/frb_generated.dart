@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1154468785;
+  int get rustContentHash => -1383758017;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -161,8 +161,6 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiPlayerSetBackgroundAnalysis({required bool enabled});
 
-  Future<void> crateApiPlayerSetBeatmatch({required bool enabled});
-
   Future<void> crateApiPlayerSetCrossfade({required int ms});
 
   Future<void> crateApiPlayerSetEq({
@@ -173,6 +171,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiPlayerSetEqEnabled({required bool enabled});
 
   Future<void> crateApiPlayerSetNormalization({required bool enabled});
+
+  Future<void> crateApiPlayerSetSmartTransitions({required bool enabled});
 
   Future<void> crateApiPlayerSetUiSetting({
     required String key,
@@ -1075,34 +1075,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiPlayerSetBeatmatch({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 31,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiPlayerSetBeatmatchConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiPlayerSetBeatmatchConstMeta =>
-      const TaskConstMeta(debugName: "set_beatmatch", argNames: ["enabled"]);
-
-  @override
   Future<void> crateApiPlayerSetCrossfade({required int ms}) {
     return handler.executeNormal(
       NormalTask(
@@ -1112,7 +1084,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1144,7 +1116,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1174,7 +1146,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1202,7 +1174,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1220,6 +1192,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiPlayerSetNormalizationConstMeta =>
       const TaskConstMeta(
         debugName: "set_normalization",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Future<void> crateApiPlayerSetSmartTransitions({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 35,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiPlayerSetSmartTransitionsConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPlayerSetSmartTransitionsConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_smart_transitions",
         argNames: ["enabled"],
       );
 
@@ -1841,7 +1844,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PlayerSettingsDto(
       crossfadeMs: dco_decode_u_32(arr[0]),
       normalize: dco_decode_bool(arr[1]),
-      beatmatch: dco_decode_bool(arr[2]),
+      smartTransitions: dco_decode_bool(arr[2]),
       volume: dco_decode_f_64(arr[3]),
       eqEnabled: dco_decode_bool(arr[4]),
       eqGainsDb: dco_decode_list_prim_f_64_strict(arr[5]),
@@ -2418,7 +2421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_crossfadeMs = sse_decode_u_32(deserializer);
     var var_normalize = sse_decode_bool(deserializer);
-    var var_beatmatch = sse_decode_bool(deserializer);
+    var var_smartTransitions = sse_decode_bool(deserializer);
     var var_volume = sse_decode_f_64(deserializer);
     var var_eqEnabled = sse_decode_bool(deserializer);
     var var_eqGainsDb = sse_decode_list_prim_f_64_strict(deserializer);
@@ -2426,7 +2429,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PlayerSettingsDto(
       crossfadeMs: var_crossfadeMs,
       normalize: var_normalize,
-      beatmatch: var_beatmatch,
+      smartTransitions: var_smartTransitions,
       volume: var_volume,
       eqEnabled: var_eqEnabled,
       eqGainsDb: var_eqGainsDb,
@@ -3004,7 +3007,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.crossfadeMs, serializer);
     sse_encode_bool(self.normalize, serializer);
-    sse_encode_bool(self.beatmatch, serializer);
+    sse_encode_bool(self.smartTransitions, serializer);
     sse_encode_f_64(self.volume, serializer);
     sse_encode_bool(self.eqEnabled, serializer);
     sse_encode_list_prim_f_64_strict(self.eqGainsDb, serializer);

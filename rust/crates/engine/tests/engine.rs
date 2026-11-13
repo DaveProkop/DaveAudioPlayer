@@ -864,3 +864,70 @@ fn crossfade_skips_trailing_and_leading_silence() {
     assert_eq!(out[total - 1], b(4 * r - 1), "b plays to its last frame");
     assert!(out[total..].iter().all(|&s| s == 0.0));
 }
+
+/// Peak position (frame) in `out` within ±40% of a beat around `expected`.
+fn peak_near(out: &[f32], expected: f64, beat: f64) -> usize {
+    let (lo, hi) = ((expected - 0.4 * beat) as usize, (expected + 0.4 * beat) as usize);
+    lo + out[lo..hi]
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+        .unwrap()
+        .0
+}
+
+#[test]
+fn clashing_tempo_and_key_echo_out_and_the_next_track_lands_on_the_beat() {
+    let dir = TempDir::new("echo");
+    // a: 120 BPM in 8A, clicks on every beat. b: 140 BPM in 3B (far apart), first beat
+    // at 0.8 s.
+    write_clicks(&dir.music().join("a.wav"), 20.0, (0..40).map(|k| 0.25 + 0.5 * k as f64));
+    let b_beat = 60.0 / 140.0;
+    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.8 + b_beat * k as f64));
+    let id = scan(&dir);
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, bpm, first, key) in [("a.wav", 120.0, 250, "8A"), ("b.wav", 140.0, 800, "3B")] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
+                                       first_beat_ms, key_camelot, key_confidence, analyzed_at)
+                 VALUES (?1, ?2, ?3, 1.0, ?4, ?5, 1.0, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first, key],
+            )
+            .unwrap();
+        }
+    }
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    // Index 0 = a's first beat. The echo (1 beat + 4 beats of echoes) starts on the last
+    // bar line that leaves room: a's beat 32. b's first beat follows one beat later.
+    let out = captured_from_first_sound(&capture);
+    let rate = f64::from(RATE);
+    let beat = rate / 2.0;
+    let tolerance = rate * 0.005;
+    let first_b = 33.0 * beat;
+    // Off a's grid, so neither a nor its echoes are there: b's second and third beats.
+    for j in 1..3 {
+        let expected = first_b + j as f64 * b_beat * rate;
+        let peak = peak_near(&out, expected, b_beat * rate);
+        assert!(
+            (peak as f64 - expected).abs() < tolerance && out[peak].abs() > 0.3,
+            "b beat {j}: click at {peak} ({}), expected {expected}",
+            out[peak]
+        );
+    }
+    // a's dry clicks stop after its last beat: at beat 35 only a fading echo is left.
+    let echo = out[peak_near(&out, 35.0 * beat, b_beat * rate / 2.0)].abs();
+    let dry = out[peak_near(&out, 30.0 * beat, b_beat * rate / 2.0)].abs();
+    assert!(echo < dry * 0.6, "echo {echo} vs dry {dry}");
+}

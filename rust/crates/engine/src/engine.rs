@@ -16,7 +16,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
-use dap_analysis::normalization_gain_db;
+use dap_analysis::{Camelot, normalization_gain_db};
 use dap_dsp::eq::{BAND_COUNT, MAX_GAIN_DB};
 use dap_dsp::gain::db_to_gain;
 use dap_library::catalog::now_ms;
@@ -42,7 +42,7 @@ const SETTING_CURRENT: &str = "player.current_queue_item";
 const SETTING_POSITION: &str = "player.position_ms";
 const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
-const SETTING_BEATMATCH: &str = "player.beatmatch";
+const SETTING_SMART: &str = "player.smart_transitions";
 const SETTING_VOLUME: &str = "player.volume";
 const SETTING_EQ_ENABLED: &str = "eq.enabled";
 const SETTING_EQ_GAINS: &str = "eq.gains_db";
@@ -61,6 +61,9 @@ const BEATMATCH_MAX_TEMPO_GAP: f64 = 0.08;
 /// A beatmatched transition starts on a phrase boundary and lasts one phrase; the incoming
 /// track then returns to its own tempo over another phrase.
 const PHRASE_BEATS: i64 = 16;
+const BAR_BEATS: i64 = 4;
+/// An echo out lasts the outgoing track's last beat plus four beats of echoes.
+const ECHO_BEATS: u64 = 5;
 
 pub struct EngineConfig {
     pub db_path: PathBuf,
@@ -112,8 +115,9 @@ pub enum Command {
     },
     /// Volume normalization to a common loudness (EBU R128).
     SetNormalization(bool),
-    /// Beatmatched transitions between tracks of similar tempo (when crossfade is on).
-    SetBeatmatch(bool),
+    /// Transitions chosen per pair of tracks (beatmatch, filter sweep, echo out) instead
+    /// of a plain crossfade (when crossfade is on).
+    SetSmartTransitions(bool),
     /// Stores a free-form UI preference (key without prefix; saved as `ui.<key>`).
     SetUiSetting {
         key: String,
@@ -154,7 +158,7 @@ pub struct PlayerState {
 pub struct PlayerSettings {
     pub crossfade_ms: u32,
     pub normalize: bool,
-    pub beatmatch: bool,
+    pub smart_transitions: bool,
     /// Linear 0.0–1.0.
     pub volume: f32,
     pub eq_enabled: bool,
@@ -301,6 +305,10 @@ struct Loaded {
     continues_album: bool,
     /// Beat grid from the analysis, if known.
     beats: Option<Beats>,
+    /// Key from the analysis or tags, if known.
+    key: Option<Camelot>,
+    /// How this deck comes in after the previous one.
+    mix: Mix,
     /// Set when the deck plays time-stretched (beatmatched into the previous one).
     stretch: Option<Stretched>,
     /// Where the deck started in the track.
@@ -341,6 +349,29 @@ impl Loaded {
     fn rate_at(&self, out: u64) -> f64 {
         self.stretch.map_or(1.0, |s| s.plan.rate_at(out as f64))
     }
+}
+
+/// The kind of transition into a deck, decided when it is loaded (it may need to start
+/// somewhere else in the track).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Mix {
+    #[default]
+    Crossfade,
+    /// Similar tempo: stretched onto the outgoing beat grid.
+    Beatmatch,
+    /// Different tempo, compatible (or unknown) keys.
+    FilterSweep,
+    /// Different tempo and clashing keys: the outgoing track echoes out on a beat and the
+    /// incoming one starts one beat before its first beat, so that beat lands cleanly.
+    EchoOut,
+}
+
+/// How the next deck is loaded.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Incoming {
+    mix: Mix,
+    start_ms: u64,
+    stretch: Option<Stretched>,
 }
 
 /// A beat grid in source frames at the output rate.
@@ -484,7 +515,7 @@ impl Control {
                     v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32
                 }),
             normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
-            beatmatch: read_setting(&reader, SETTING_BEATMATCH).is_none_or(|v| v != 0),
+            smart_transitions: read_setting(&reader, SETTING_SMART).is_none_or(|v| v != 0),
             volume: read_setting_str(&reader, SETTING_VOLUME)
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| v.is_finite())
@@ -724,8 +755,10 @@ impl Control {
         entry: QueueEntry,
         start_ms: u64,
         after: Option<&Loaded>,
-        stretch: Option<Stretched>,
+        incoming: Option<Incoming>,
     ) -> (Loaded, dap_mixer::DeckInput) {
+        let stretch = incoming.and_then(|i| i.stretch);
+        let start_ms = incoming.map_or(start_ms, |i| i.start_ms);
         let token = self.next_token;
         self.next_token += 1;
         let (path, duration_ms) = self.track_file(entry.track_id);
@@ -741,7 +774,7 @@ impl Control {
         let (input, info) = spawn_deck(
             token,
             path,
-            stretch.map_or(start_ms, |s| s.start_ms),
+            start_ms,
             stretch.map(|s| s.plan),
             self.deck_gain(gain_db),
             self.sample_rate,
@@ -757,8 +790,10 @@ impl Control {
                 album,
                 continues_album,
                 beats: self.beats(entry.track_id),
+                key: self.key(entry.track_id),
+                mix: incoming.map_or(Mix::Crossfade, |i| i.mix),
                 stretch,
-                start_ms: stretch.map_or(start_ms, |s| s.start_ms),
+                start_ms,
                 audio_end: self
                     .audio_bounds(entry.track_id)
                     .1
@@ -792,30 +827,21 @@ impl Control {
     /// Ensures the deck after the current item holds the right track (gapless preload).
     fn preload_next(&mut self) {
         let want = self.cursor_index().and_then(|i| self.queue.get(i + 1));
-        let stretch = match (want, self.current.as_ref()) {
-            (Some(e), Some(current)) => self.beatmatch_for(current, e.track_id),
+        let incoming = match (want, self.current.as_ref()) {
+            (Some(e), Some(current)) => Some(self.incoming_for(current, e.track_id)),
             _ => None,
         };
-        // A crossfaded track starts at its first sound, not in its leading silence.
-        let start_ms = match (want, self.current.as_ref()) {
-            (Some(e), Some(current))
-                if stretch.is_none()
-                    && self.settings.crossfade_ms > 0
-                    && !self.follows_on_album(current, e.track_id) =>
-            {
-                self.audio_bounds(e.track_id).0.unwrap_or(0)
-            }
-            _ => 0,
-        };
-        let start_ms = stretch.map_or(start_ms, |s| s.start_ms);
-        let have = self.next.as_ref().map(|l| (l.entry.id, l.stretch, l.start_ms));
-        if want.map(|e| (e.id, stretch, start_ms)) == have {
+        let have = self
+            .next
+            .as_ref()
+            .map(|l| (l.entry.id, l.mix, l.start_ms, l.stretch));
+        if want.zip(incoming).map(|(e, i)| (e.id, i.mix, i.start_ms, i.stretch)) == have {
             return;
         }
         match want {
             Some(entry) if self.current.is_some() => {
                 let current = self.current.take();
-                let (loaded, input) = self.load(entry, start_ms, current.as_ref(), stretch);
+                let (loaded, input) = self.load(entry, 0, current.as_ref(), incoming);
                 self.current = current;
                 self.next = Some(loaded);
                 self.send_mixer(MixerCommand::SetNext(input));
@@ -827,6 +853,71 @@ impl Control {
             }
         }
         self.prioritize_analysis();
+    }
+
+    /// How track `track_id` should come in after `current`: the transition kind and where
+    /// the track starts.
+    fn incoming_for(&self, current: &Loaded, track_id: i64) -> Incoming {
+        let gapless = Incoming {
+            mix: Mix::Crossfade,
+            start_ms: 0,
+            stretch: None,
+        };
+        if self.settings.crossfade_ms == 0 || self.follows_on_album(current, track_id) {
+            return gapless;
+        }
+        // A crossfaded track starts at its first sound, not in its leading silence.
+        let plain = Incoming {
+            start_ms: self.audio_bounds(track_id).0.unwrap_or(0),
+            ..gapless
+        };
+        if !self.settings.smart_transitions {
+            return plain;
+        }
+        if let Some(stretch) = self.beatmatch_for(current, track_id) {
+            return Incoming {
+                mix: Mix::Beatmatch,
+                start_ms: stretch.start_ms,
+                stretch: Some(stretch),
+            };
+        }
+        // Different tempo (or no beat grid): only known tempos get the DJ treatment.
+        let (Some(out), Some(inc)) = (current.beats, self.beats(track_id)) else {
+            return plain;
+        };
+        let clash = match (current.key, self.key(track_id)) {
+            (Some(a), Some(b)) => !a.compatible(b),
+            _ => false,
+        };
+        if clash {
+            let rate = f64::from(self.sample_rate);
+            let start = (inc.first - out.period).max(0.0);
+            Incoming {
+                mix: Mix::EchoOut,
+                start_ms: (start * 1000.0 / rate).round() as u64,
+                stretch: None,
+            }
+        } else {
+            Incoming {
+                mix: Mix::FilterSweep,
+                ..plain
+            }
+        }
+    }
+
+    /// Key of a track from the stored analysis (or its tags).
+    fn key(&self, track_id: i64) -> Option<Camelot> {
+        self.reader
+            .query_row(
+                "SELECT key_camelot FROM analysis WHERE track_id = ?1",
+                [track_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .flatten()
+            .and_then(|k| Camelot::parse(&k))
     }
 
     /// Whether `track_id` is the next track of `current`'s album (played gapless).
@@ -875,7 +966,7 @@ impl Control {
 
     /// How track `track_id` should play to be beatmatched into `current`, if it can be.
     fn beatmatch_for(&self, current: &Loaded, track_id: i64) -> Option<Stretched> {
-        if !self.settings.beatmatch || self.settings.crossfade_ms == 0 {
+        if !self.settings.smart_transitions || self.settings.crossfade_ms == 0 {
             return None;
         }
         // Album tracks that follow each other stay gapless.
@@ -906,24 +997,50 @@ impl Control {
     /// phrase boundary that leaves room for a phrase, or on the last beat that does.
     fn beatmatch_plan(&self, current: &Loaded, end: u64) -> Option<TransitionPlan> {
         let beats = current.beats?;
+        let len = (PHRASE_BEATS as f64 * beats.period).round() as u64;
+        self.beat_aligned_plan(current, end, len, PHRASE_BEATS, TransitionShape::Beatmatch {
+            swap: len / 2,
+        })
+    }
+
+    /// An echo out of `current`: on the last bar line that leaves room for the last beat
+    /// and the echoes to die away.
+    fn echo_plan(&self, current: &Loaded, end: u64) -> Option<TransitionPlan> {
+        let beats = current.beats?;
+        let feed = beats.period.round() as u64;
+        let len = ECHO_BEATS * feed;
+        self.beat_aligned_plan(current, end, len, BAR_BEATS, TransitionShape::EchoOut { feed })
+    }
+
+    /// A transition of `len` frames out of `current` (ending by `end`) that starts on the
+    /// last beat that is a multiple of `align` beats and leaves room for it, or else on the
+    /// last beat that does.
+    fn beat_aligned_plan(
+        &self,
+        current: &Loaded,
+        end: u64,
+        len: u64,
+        align: i64,
+        shape: TransitionShape,
+    ) -> Option<TransitionPlan> {
+        let beats = current.beats?;
         let rate = u64::from(self.sample_rate);
         // Positions arrive a little late: a transition about to start stays as planned.
         let margin = rate / 2;
         if let Some(p) = self.plan_sent
             && p.token == current.token
-            && matches!(p.shape, TransitionShape::Beatmatch { .. })
+            && std::mem::discriminant(&p.shape) == std::mem::discriminant(&shape)
             && self.position_frames + margin >= p.start_frame
         {
             return Some(p);
         }
-        let len = (PHRASE_BEATS as f64 * beats.period).round() as u64;
         let latest = current.source_frame(end.checked_sub(len)?) as f64;
         let k_max = ((latest - beats.first) / beats.period).floor();
         if k_max < 0.0 {
             return None;
         }
         let k_max = k_max as i64;
-        for k in [k_max - k_max.rem_euclid(PHRASE_BEATS), k_max] {
+        for k in [k_max - k_max.rem_euclid(align), k_max] {
             let start = current
                 .output_frame(beats.first + k as f64 * beats.period)
                 .round() as u64;
@@ -932,7 +1049,7 @@ impl Control {
                     token: current.token,
                     start_frame: start,
                     end_frame: start + len,
-                    shape: TransitionShape::Beatmatch { swap: len / 2 },
+                    shape,
                 });
             }
         }
@@ -966,10 +1083,13 @@ impl Control {
             return None;
         }
         let end = current.mix_end()?;
-        if next.stretch.is_some()
-            && let Some(plan) = self.beatmatch_plan(current, end)
-        {
-            return Some(plan);
+        let beat_plan = match next.mix {
+            Mix::Beatmatch => self.beatmatch_plan(current, end),
+            Mix::EchoOut => self.echo_plan(current, end),
+            Mix::Crossfade | Mix::FilterSweep => None,
+        };
+        if beat_plan.is_some() {
+            return beat_plan;
         }
         let rate = u64::from(self.sample_rate);
         // Short tracks fade for at most half their length.
@@ -984,7 +1104,10 @@ impl Control {
             token: current.token,
             start_frame: end - len,
             end_frame: end,
-            shape: TransitionShape::Crossfade,
+            shape: match next.mix {
+                Mix::FilterSweep => TransitionShape::FilterSweep,
+                _ => TransitionShape::Crossfade,
+            },
         })
     }
 
@@ -1019,10 +1142,12 @@ impl Control {
                 && current.entry.track_id == track_id
             {
                 let beats = self.beats(track_id);
+                let key = self.key(track_id);
                 let rate = u64::from(self.sample_rate);
                 let audio_end = self.audio_bounds(track_id).1.map(|ms| ms * rate / 1000);
                 if let Some(current) = self.current.as_mut() {
                     current.beats = beats;
+                    current.key = key;
                     current.audio_end = audio_end;
                 }
                 grids_changed = true;
@@ -1125,12 +1250,12 @@ impl Control {
         // The plan follows on the next tick.
     }
 
-    fn set_beatmatch(&mut self, on: bool) {
-        if self.settings.beatmatch == on {
+    fn set_smart_transitions(&mut self, on: bool) {
+        if self.settings.smart_transitions == on {
             return;
         }
-        self.settings.beatmatch = on;
-        self.save_setting(SETTING_BEATMATCH, i64::from(on).to_string());
+        self.settings.smart_transitions = on;
+        self.save_setting(SETTING_SMART, i64::from(on).to_string());
         self.emit(Event::Settings(self.settings));
         if self.current.is_some() {
             self.preload_next();
@@ -1335,7 +1460,7 @@ impl Control {
             }
             Command::SetCrossfade { ms } => self.set_crossfade(ms),
             Command::SetNormalization(on) => self.set_normalization(on),
-            Command::SetBeatmatch(on) => self.set_beatmatch(on),
+            Command::SetSmartTransitions(on) => self.set_smart_transitions(on),
             Command::AddFolder(path) => {
                 let result = self.db.call(move |c| add_root(c, &path));
                 match result {
