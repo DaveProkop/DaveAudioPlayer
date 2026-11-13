@@ -51,3 +51,6 @@ key.properties
 *.db-shm
 *.log
 /scratch/
+
+# Release packages
+dist/

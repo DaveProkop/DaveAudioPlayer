@@ -1,0 +1,6 @@
+# Copy to key.properties (same folder, never commit it) and fill in your own values.
+# The keystore is created once with keytool (see app/README.md, "Release builds").
+storeFile=C:\Users\<you>\keys\daveaudioplayer.jks
+storePassword=<keystore password>
+keyAlias=daveaudioplayer
+keyPassword=<key password>

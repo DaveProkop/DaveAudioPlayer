@@ -24,3 +24,23 @@ flutter_rust_bridge_codegen generate        # after changing rust/crates/api/src
 
 The library database lives in `%APPDATA%\DaveAudioPlayer\library.db` on Windows and in the
 app's files directory on Android.
+
+## Release builds
+
+Windows: `flutter build windows --release` gives `build\windows\x64\runner\Release`. Copy
+`msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll` from `C:\Windows\System32`
+next to the exe so it runs without the VC++ redistributable, then zip the folder.
+
+Android needs a signing key, created once and kept outside the repository. Back it up:
+every update must be signed with the same key.
+
+```powershell
+& 'C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot\bin\keytool.exe' -genkeypair -v -keystore C:\Users\<you>\keys\daveaudioplayer.jks -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 -alias daveaudioplayer
+```
+
+Copy `android/key.properties.example` to `android/key.properties` (ignored by git) and fill
+in the path and password. Without it, release builds are signed with the debug key.
+
+```sh
+flutter build apk --release --split-per-abi   # app-arm64-v8a-release.apk for phones
+```
