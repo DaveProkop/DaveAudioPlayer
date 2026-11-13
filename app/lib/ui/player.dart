@@ -659,40 +659,75 @@ class NowPlayingView extends StatelessWidget {
   }
 }
 
-/// How the current track passes into the next one, and in how long.
+/// How the current track passes into the next one, and in how long. Tapping it picks the
+/// transition for this pair of tracks.
 class _TransitionLine extends StatelessWidget {
   const _TransitionLine({required this.player, required this.gapless});
 
   final PlayerController player;
   final bool gapless;
 
+  static const _choices = <(rust.TransitionKindDto?, String)>[
+    (null, 'Automaticky'),
+    (rust.TransitionKindDto.beatmatch, 'Beatmatch'),
+    (rust.TransitionKindDto.hardCut, 'Střih na dobu'),
+    (rust.TransitionKindDto.filterSweep, 'Přechod filtrem'),
+    (rust.TransitionKindDto.echoOut, 'Echo na poslední době'),
+    (rust.TransitionKindDto.crossfade, 'Prolnutí'),
+    (rust.TransitionKindDto.gapless, 'Bez mezery'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tr = player.state?.transition;
     final s = player.settings;
-    final label = switch (tr?.kind) {
+    final crossfadeS = (((s?.crossfadeMs ?? 0) == 0 ? 6000 : s!.crossfadeMs) / 1000).round();
+    var label = switch (tr?.kind) {
       rust.TransitionKindDto.beatmatch => 'beatmatch – srovnání do rytmu',
       rust.TransitionKindDto.filterSweep => 'přechod filtrem',
       rust.TransitionKindDto.echoOut => 'echo na poslední době',
       rust.TransitionKindDto.hardCut => 'střih na dobu',
-      rust.TransitionKindDto.crossfade => 'prolnutí ${((s?.crossfadeMs ?? 0) / 1000).round()} s',
+      rust.TransitionKindDto.crossfade => 'prolnutí $crossfadeS s',
       rust.TransitionKindDto.gapless => gapless ? 'bez mezery – další skladba alba' : 'bez mezery',
       null =>
         gapless
             ? 'bez mezery – další skladba alba'
             : (s?.crossfadeMs ?? 0) > 0
-            ? 'prolnutí ${(s!.crossfadeMs / 1000).round()} s'
+            ? 'prolnutí $crossfadeS s'
             : 'bez mezery',
     };
+    if (tr?.forced ?? false) label = '$label · ručně';
     final style = TextStyle(fontSize: 12.5, color: gapless ? context.appColors.gapless : scheme.primary);
-    if (tr == null) return Text(label, style: style);
-    return PositionTicker(
-      player: player,
-      builder: (context) {
-        final left = tr.startMs - player.positionMs;
-        return Text(left > 0 ? '$label · za ${formatMs(left)}' : label, style: style);
-      },
+    final from = player.currentTrack?.id;
+    final to = player.nextTrack?.id;
+    final text = tr == null
+        ? Text(label, style: style)
+        : PositionTicker(
+            player: player,
+            builder: (context) {
+              final left = tr.startMs - player.positionMs;
+              return Text(left > 0 ? '$label · za ${formatMs(left)}' : label, style: style);
+            },
+          );
+    if (from == null || to == null) return text;
+    final chosen = (tr?.forced ?? false) ? tr!.kind : null;
+    return PopupMenuButton<int>(
+      tooltip: 'Vybrat přechod',
+      position: PopupMenuPosition.under,
+      onSelected: (i) =>
+          rust.setTransitionOverride(fromTrackId: from, toTrackId: to, kind: _choices[i].$1),
+      itemBuilder: (context) => [
+        for (final (i, (kind, name)) in _choices.indexed)
+          CheckedPopupMenuItem(value: i, checked: kind == chosen, child: Text(name)),
+      ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: text),
+          Icon(Icons.arrow_drop_down, size: 18, color: style.color),
+        ],
+      ),
     );
   }
 }

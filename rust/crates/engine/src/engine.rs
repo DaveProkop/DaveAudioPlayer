@@ -122,6 +122,14 @@ pub enum Command {
     /// Transitions chosen per pair of tracks (beatmatch, filter sweep, echo out) instead
     /// of a plain crossfade (when crossfade is on).
     SetSmartTransitions(bool),
+    /// Fixes the transition from one track into another (`None` = automatic again). It
+    /// wins over the settings and the album rule; a kind the tracks cannot do (no beat
+    /// grid) falls back to a crossfade.
+    SetTransitionOverride {
+        from_track: i64,
+        to_track: i64,
+        kind: Option<TransitionKind>,
+    },
     /// Stores a free-form UI preference (key without prefix; saved as `ui.<key>`).
     SetUiSetting {
         key: String,
@@ -165,6 +173,8 @@ pub struct UpcomingTransition {
     pub kind: TransitionKind,
     /// Position in the current track where it starts.
     pub start_ms: u64,
+    /// Chosen by the user for this pair of tracks.
+    pub forced: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +185,33 @@ pub enum TransitionKind {
     FilterSweep,
     EchoOut,
     HardCut,
+}
+
+impl TransitionKind {
+    /// The name stored in `transition_override.kind`.
+    fn db_name(self) -> &'static str {
+        match self {
+            TransitionKind::Gapless => "gapless",
+            TransitionKind::Crossfade => "crossfade",
+            TransitionKind::Beatmatch => "beatmatch",
+            TransitionKind::FilterSweep => "filter",
+            TransitionKind::EchoOut => "echo",
+            TransitionKind::HardCut => "cut",
+        }
+    }
+
+    fn from_db_name(name: &str) -> Option<Self> {
+        [
+            TransitionKind::Gapless,
+            TransitionKind::Crossfade,
+            TransitionKind::Beatmatch,
+            TransitionKind::FilterSweep,
+            TransitionKind::EchoOut,
+            TransitionKind::HardCut,
+        ]
+        .into_iter()
+        .find(|k| k.db_name() == name)
+    }
 }
 
 /// Playback preferences, stored in the database.
@@ -333,6 +370,8 @@ struct Loaded {
     key: Option<Camelot>,
     /// How this deck comes in after the previous one.
     mix: Mix,
+    /// That was the user's choice for this pair of tracks.
+    forced: bool,
     /// Set when the deck plays time-stretched (beatmatched into the previous one).
     stretch: Option<Stretched>,
     /// Where the deck started in the track.
@@ -379,6 +418,8 @@ impl Loaded {
 /// somewhere else in the track).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mix {
+    /// Straight on, no overlap (consecutive album tracks, crossfade off).
+    Gapless,
     #[default]
     Crossfade,
     /// Similar tempo: stretched onto the outgoing beat grid.
@@ -399,6 +440,8 @@ struct Incoming {
     mix: Mix,
     start_ms: u64,
     stretch: Option<Stretched>,
+    /// Chosen by the user for this pair of tracks.
+    forced: bool,
 }
 
 /// A beat grid in source frames at the output rate.
@@ -711,10 +754,11 @@ impl Control {
     /// The transition the mixer will do out of the current deck (gapless without a plan).
     fn upcoming_transition(&self) -> Option<UpcomingTransition> {
         let current = self.current.as_ref()?;
-        self.next.as_ref()?;
+        let next = self.next.as_ref()?;
         let ms = |frame: u64| current.source_frame(frame) * 1000 / u64::from(self.sample_rate);
         Some(match self.plan_sent.filter(|p| p.token == current.token) {
             Some(plan) => UpcomingTransition {
+                forced: next.forced,
                 kind: match plan.shape {
                     TransitionShape::Crossfade => TransitionKind::Crossfade,
                     TransitionShape::Beatmatch { .. } => TransitionKind::Beatmatch,
@@ -727,6 +771,7 @@ impl Control {
             None => UpcomingTransition {
                 kind: TransitionKind::Gapless,
                 start_ms: ms(current.info.end_frame()?),
+                forced: next.forced,
             },
         })
     }
@@ -846,6 +891,7 @@ impl Control {
                 beats: self.beats(entry.track_id),
                 key: self.key(entry.track_id),
                 mix: incoming.map_or(Mix::Crossfade, |i| i.mix),
+                forced: incoming.is_some_and(|i| i.forced),
                 stretch,
                 start_ms,
                 audio_end: self
@@ -888,8 +934,11 @@ impl Control {
         let have = self
             .next
             .as_ref()
-            .map(|l| (l.entry.id, l.mix, l.start_ms, l.stretch));
-        if want.zip(incoming).map(|(e, i)| (e.id, i.mix, i.start_ms, i.stretch)) == have {
+            .map(|l| (l.entry.id, l.mix, l.start_ms, l.stretch, l.forced));
+        let wanted = want
+            .zip(incoming)
+            .map(|(e, i)| (e.id, i.mix, i.start_ms, i.stretch, i.forced));
+        if wanted == have {
             return;
         }
         match want {
@@ -912,58 +961,127 @@ impl Control {
     /// How track `track_id` should come in after `current`: the transition kind and where
     /// the track starts.
     fn incoming_for(&self, current: &Loaded, track_id: i64) -> Incoming {
-        let gapless = Incoming {
-            mix: Mix::Crossfade,
-            start_ms: 0,
-            stretch: None,
-        };
-        if self.settings.crossfade_ms == 0 || self.follows_on_album(current, track_id) {
-            return gapless;
+        if let Some(kind) = self.transition_override(current.entry.track_id, track_id) {
+            let mix = match kind {
+                TransitionKind::Gapless => Mix::Gapless,
+                TransitionKind::Crossfade => Mix::Crossfade,
+                TransitionKind::Beatmatch => Mix::Beatmatch,
+                TransitionKind::FilterSweep => Mix::FilterSweep,
+                TransitionKind::EchoOut => Mix::EchoOut,
+                TransitionKind::HardCut => Mix::HardCut,
+            };
+            let incoming = self
+                .incoming_as(mix, current, track_id)
+                .or_else(|| self.incoming_as(Mix::Crossfade, current, track_id))
+                .expect("a crossfade is always possible");
+            return Incoming {
+                forced: true,
+                ..incoming
+            };
         }
-        // A crossfaded track starts at its first sound, not in its leading silence.
-        let plain = Incoming {
-            start_ms: self.audio_bounds(track_id).0.unwrap_or(0),
-            ..gapless
-        };
+        let auto = |mix| self.incoming_as(mix, current, track_id);
+        if self.settings.crossfade_ms == 0 || self.follows_on_album(current, track_id) {
+            return auto(Mix::Gapless).expect("gapless");
+        }
+        let plain = auto(Mix::Crossfade).expect("crossfade");
         if !self.settings.smart_transitions {
             return plain;
         }
-        if let Some(stretch) = self.beatmatch_for(current, track_id) {
-            return Incoming {
-                mix: Mix::Beatmatch,
-                start_ms: stretch.start_ms,
-                stretch: Some(stretch),
-            };
+        if let Some(incoming) = auto(Mix::Beatmatch) {
+            return incoming;
         }
         // Different tempo (or no beat grid): only known tempos get the DJ treatment.
-        let (Some(out), Some(inc)) = (current.beats, self.beats(track_id)) else {
+        if current.beats.is_none() || self.beats(track_id).is_none() {
             return plain;
-        };
-        let rate = f64::from(self.sample_rate);
+        }
         let hot = |id: i64| self.energy(id).is_some_and(|e| e >= HARD_CUT_ENERGY);
         if hot(current.entry.track_id) && hot(track_id) {
-            return Incoming {
-                mix: Mix::HardCut,
-                start_ms: (inc.first * 1000.0 / rate).round() as u64,
-                stretch: None,
-            };
+            return auto(Mix::HardCut).unwrap_or(plain);
         }
         let clash = match (current.key, self.key(track_id)) {
             (Some(a), Some(b)) => !a.compatible(b),
             _ => false,
         };
-        if clash {
-            let start = (inc.first - out.period).max(0.0);
-            Incoming {
-                mix: Mix::EchoOut,
-                start_ms: (start * 1000.0 / rate).round() as u64,
+        auto(if clash { Mix::EchoOut } else { Mix::FilterSweep }).unwrap_or(plain)
+    }
+
+    /// How track `track_id` comes in after `current` with transition `mix`, if the two
+    /// tracks allow it (beat grids for the beat-based kinds, a close enough tempo for a
+    /// beatmatch).
+    fn incoming_as(&self, mix: Mix, current: &Loaded, track_id: i64) -> Option<Incoming> {
+        let rate = f64::from(self.sample_rate);
+        let at = |frames: f64| (frames.max(0.0) * 1000.0 / rate).round() as u64;
+        let simple = |start_ms| {
+            Some(Incoming {
+                mix,
+                start_ms,
                 stretch: None,
+                forced: false,
+            })
+        };
+        match mix {
+            Mix::Gapless => simple(0),
+            // A crossfaded track starts at its first sound, not in its leading silence.
+            Mix::Crossfade | Mix::FilterSweep => {
+                simple(self.audio_bounds(track_id).0.unwrap_or(0))
             }
-        } else {
-            Incoming {
-                mix: Mix::FilterSweep,
-                ..plain
+            Mix::Beatmatch => {
+                let stretch = self.beatmatch_for(current, track_id)?;
+                Some(Incoming {
+                    mix,
+                    start_ms: stretch.start_ms,
+                    stretch: Some(stretch),
+                    forced: false,
+                })
             }
+            // Cut straight into the first beat.
+            Mix::HardCut => {
+                current.beats?;
+                simple(at(self.beats(track_id)?.first))
+            }
+            // One beat before the first beat, so that beat lands right after the echo's
+            // last beat.
+            Mix::EchoOut => {
+                let out = current.beats?;
+                simple(at(self.beats(track_id)?.first - out.period))
+            }
+        }
+    }
+
+    /// The user's choice of transition from one track into another, if any.
+    fn transition_override(&self, from: i64, to: i64) -> Option<TransitionKind> {
+        self.reader
+            .query_row(
+                "SELECT kind FROM transition_override WHERE from_track_id = ?1 AND to_track_id = ?2",
+                [from, to],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .and_then(|k| TransitionKind::from_db_name(&k))
+    }
+
+    fn set_transition_override(&mut self, from: i64, to: i64, kind: Option<TransitionKind>) {
+        let stored = self.db.call(move |c| match kind {
+            Some(kind) => c.execute(
+                "INSERT INTO transition_override (from_track_id, to_track_id, kind, params, updated_at)
+                 VALUES (?1, ?2, ?3, '{}', ?4)
+                 ON CONFLICT (from_track_id, to_track_id) DO UPDATE SET kind = ?3, updated_at = ?4",
+                params![from, to, kind.db_name(), dap_library::catalog::now_ms()],
+            ),
+            None => c.execute(
+                "DELETE FROM transition_override WHERE from_track_id = ?1 AND to_track_id = ?2",
+                [from, to],
+            ),
+        });
+        if let Some(Err(e)) = stored {
+            self.emit(Event::Error(e.to_string()));
+        }
+        // The next deck may have to start elsewhere or play stretched.
+        if self.current.is_some() {
+            self.preload_next();
+            self.emit_state();
         }
     }
 
@@ -1043,13 +1161,6 @@ impl Control {
 
     /// How track `track_id` should play to be beatmatched into `current`, if it can be.
     fn beatmatch_for(&self, current: &Loaded, track_id: i64) -> Option<Stretched> {
-        if !self.settings.smart_transitions || self.settings.crossfade_ms == 0 {
-            return None;
-        }
-        // Album tracks that follow each other stay gapless.
-        if self.follows_on_album(current, track_id) {
-            return None;
-        }
         let out = current.beats?;
         let inc = self.beats(track_id)?;
         // Source frames per output frame that bring the incoming beats to the outgoing tempo.
@@ -1151,12 +1262,9 @@ impl Control {
 
     /// The crossfade the mixer should do out of the current deck, if any.
     fn wanted_plan(&self) -> Option<TransitionPlan> {
-        if self.settings.crossfade_ms == 0 {
-            return None;
-        }
         let current = self.current.as_ref()?;
         let next = self.next.as_ref()?;
-        if next.continues_album || current.info.failure.get().is_some() {
+        if next.mix == Mix::Gapless || current.info.failure.get().is_some() {
             return None;
         }
         let end = current.mix_end()?;
@@ -1167,14 +1275,19 @@ impl Control {
                 let len = HARD_CUT_MS * u64::from(self.sample_rate) / 1000;
                 self.beat_aligned_plan(current, end, len, PHRASE_BEATS, TransitionShape::Cut)
             }
-            Mix::Crossfade | Mix::FilterSweep => None,
+            Mix::Gapless | Mix::Crossfade | Mix::FilterSweep => None,
         };
         if beat_plan.is_some() {
             return beat_plan;
         }
         let rate = u64::from(self.sample_rate);
+        // With crossfade off only a chosen transition gets here: it takes the default length.
+        let ms = match self.settings.crossfade_ms {
+            0 => DEFAULT_CROSSFADE_MS,
+            ms => ms,
+        };
         // Short tracks fade for at most half their length.
-        let mut len = (u64::from(self.settings.crossfade_ms) * rate / 1000).min(end / 2);
+        let mut len = (u64::from(ms) * rate / 1000).min(end / 2);
         if let Some(next_end) = next.info.end_frame() {
             len = len.min(next_end / 2);
         }
@@ -1548,6 +1661,11 @@ impl Control {
             Command::SetCrossfade { ms } => self.set_crossfade(ms),
             Command::SetNormalization(on) => self.set_normalization(on),
             Command::SetSmartTransitions(on) => self.set_smart_transitions(on),
+            Command::SetTransitionOverride {
+                from_track,
+                to_track,
+                kind,
+            } => self.set_transition_override(from_track, to_track, kind),
             Command::AddFolder(path) => {
                 let result = self.db.call(move |c| add_root(c, &path));
                 match result {

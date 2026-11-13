@@ -93,7 +93,7 @@ návrh s potvrzením). Beatmatch přechody (mřížka dob, time-stretch `dap-str
 dobu, prohození basů, návrat tempa). Chytré přechody podle páru skladeb: beatmatch,
 filter sweep (jiné tempo), echo out (jiné tempo i tónina), tvrdý střih (dvě energické
 skladby), jinak crossfade; přepínač v nastavení. Energie skladby (hlasitost + tempo) ve
-štítku a v řazení fronty. Náhled přechodu (typ, odpočet, skok 10 s před mix).
+štítku a v řazení fronty. Náhled přechodu (typ, odpočet, skok 10 s před mix) a ruční volba přechodu pro dvojici skladeb.
 Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade-outu po poklesu
 o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),

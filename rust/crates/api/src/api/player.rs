@@ -192,6 +192,28 @@ pub fn set_smart_transitions(enabled: bool) -> Result<()> {
     send(Command::SetSmartTransitions(enabled))
 }
 
+/// Fixes the transition from track `from_track_id` into `to_track_id` (`None` = automatic
+/// again). It is stored and wins over the settings; a kind the two tracks cannot do (no
+/// analyzed beat grid, too different tempos for a beatmatch) falls back to a crossfade.
+pub fn set_transition_override(
+    from_track_id: i64,
+    to_track_id: i64,
+    kind: Option<TransitionKindDto>,
+) -> Result<()> {
+    send(Command::SetTransitionOverride {
+        from_track: from_track_id,
+        to_track: to_track_id,
+        kind: kind.map(|k| match k {
+            TransitionKindDto::Gapless => TransitionKind::Gapless,
+            TransitionKindDto::Crossfade => TransitionKind::Crossfade,
+            TransitionKindDto::Beatmatch => TransitionKind::Beatmatch,
+            TransitionKindDto::FilterSweep => TransitionKind::FilterSweep,
+            TransitionKindDto::EchoOut => TransitionKind::EchoOut,
+            TransitionKindDto::HardCut => TransitionKind::HardCut,
+        }),
+    })
+}
+
 // ----- queue -----------------------------------------------------------------------
 
 pub fn play_index(index: u32) -> Result<()> {
@@ -315,6 +337,8 @@ pub struct TransitionDto {
     pub kind: TransitionKindDto,
     /// Position in the current track where the transition starts.
     pub start_ms: i64,
+    /// Chosen by the user for this pair of tracks.
+    pub forced: bool,
 }
 
 pub enum TransitionKindDto {
@@ -431,6 +455,7 @@ fn state_dto(s: PlayerState) -> PlayerStateDto {
                 TransitionKind::HardCut => TransitionKindDto::HardCut,
             },
             start_ms: t.start_ms as i64,
+            forced: t.forced,
         }),
     }
 }

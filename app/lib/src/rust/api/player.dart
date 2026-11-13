@@ -86,6 +86,19 @@ Future<void> setNormalization({required bool enabled}) =>
 Future<void> setSmartTransitions({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetSmartTransitions(enabled: enabled);
 
+/// Fixes the transition from track `from_track_id` into `to_track_id` (`None` = automatic
+/// again). It is stored and wins over the settings; a kind the two tracks cannot do (no
+/// analyzed beat grid, too different tempos for a beatmatch) falls back to a crossfade.
+Future<void> setTransitionOverride({
+  required PlatformInt64 fromTrackId,
+  required PlatformInt64 toTrackId,
+  TransitionKindDto? kind,
+}) => RustLib.instance.api.crateApiPlayerSetTransitionOverride(
+  fromTrackId: fromTrackId,
+  toTrackId: toTrackId,
+  kind: kind,
+);
+
 Future<void> playIndex({required int index}) =>
     RustLib.instance.api.crateApiPlayerPlayIndex(index: index);
 
@@ -369,10 +382,17 @@ class TransitionDto {
   /// Position in the current track where the transition starts.
   final PlatformInt64 startMs;
 
-  const TransitionDto({required this.kind, required this.startMs});
+  /// Chosen by the user for this pair of tracks.
+  final bool forced;
+
+  const TransitionDto({
+    required this.kind,
+    required this.startMs,
+    required this.forced,
+  });
 
   @override
-  int get hashCode => kind.hashCode ^ startMs.hashCode;
+  int get hashCode => kind.hashCode ^ startMs.hashCode ^ forced.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -380,7 +400,8 @@ class TransitionDto {
       other is TransitionDto &&
           runtimeType == other.runtimeType &&
           kind == other.kind &&
-          startMs == other.startMs;
+          startMs == other.startMs &&
+          forced == other.forced;
 }
 
 enum TransitionKindDto {

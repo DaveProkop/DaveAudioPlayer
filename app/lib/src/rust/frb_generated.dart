@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1383758017;
+  int get rustContentHash => 1146622830;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -173,6 +173,12 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiPlayerSetNormalization({required bool enabled});
 
   Future<void> crateApiPlayerSetSmartTransitions({required bool enabled});
+
+  Future<void> crateApiPlayerSetTransitionOverride({
+    required PlatformInt64 fromTrackId,
+    required PlatformInt64 toTrackId,
+    TransitionKindDto? kind,
+  });
 
   Future<void> crateApiPlayerSetUiSetting({
     required String key,
@@ -1227,6 +1233,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiPlayerSetTransitionOverride({
+    required PlatformInt64 fromTrackId,
+    required PlatformInt64 toTrackId,
+    TransitionKindDto? kind,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(fromTrackId, serializer);
+          sse_encode_i_64(toTrackId, serializer);
+          sse_encode_opt_box_autoadd_transition_kind_dto(kind, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 36,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiPlayerSetTransitionOverrideConstMeta,
+        argValues: [fromTrackId, toTrackId, kind],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPlayerSetTransitionOverrideConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_transition_override",
+        argNames: ["fromTrackId", "toTrackId", "kind"],
+      );
+
+  @override
   Future<void> crateApiPlayerSetUiSetting({
     required String key,
     required String value,
@@ -1240,7 +1283,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1270,7 +1313,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1298,7 +1341,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1325,7 +1368,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1359,7 +1402,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1389,7 +1432,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1416,7 +1459,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1446,7 +1489,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1474,7 +1517,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1502,7 +1545,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1658,6 +1701,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransitionDto dco_decode_box_autoadd_transition_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_transition_dto(raw);
+  }
+
+  @protected
+  TransitionKindDto dco_decode_box_autoadd_transition_kind_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_transition_kind_dto(raw);
   }
 
   @protected
@@ -1830,6 +1879,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransitionKindDto? dco_decode_opt_box_autoadd_transition_kind_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_transition_kind_dto(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
@@ -1960,11 +2017,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransitionDto dco_decode_transition_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return TransitionDto(
       kind: dco_decode_transition_kind_dto(arr[0]),
       startMs: dco_decode_i_64(arr[1]),
+      forced: dco_decode_bool(arr[2]),
     );
   }
 
@@ -2166,6 +2224,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_transition_dto(deserializer));
+  }
+
+  @protected
+  TransitionKindDto sse_decode_box_autoadd_transition_kind_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_transition_kind_dto(deserializer));
   }
 
   @protected
@@ -2437,6 +2503,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransitionKindDto? sse_decode_opt_box_autoadd_transition_kind_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_transition_kind_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2613,7 +2692,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_kind = sse_decode_transition_kind_dto(deserializer);
     var var_startMs = sse_decode_i_64(deserializer);
-    return TransitionDto(kind: var_kind, startMs: var_startMs);
+    var var_forced = sse_decode_bool(deserializer);
+    return TransitionDto(
+      kind: var_kind,
+      startMs: var_startMs,
+      forced: var_forced,
+    );
   }
 
   @protected
@@ -2800,6 +2884,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_transition_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_transition_kind_dto(
+    TransitionKindDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transition_kind_dto(self, serializer);
   }
 
   @protected
@@ -3069,6 +3162,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_transition_kind_dto(
+    TransitionKindDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_transition_kind_dto(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3190,6 +3296,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_transition_kind_dto(self.kind, serializer);
     sse_encode_i_64(self.startMs, serializer);
+    sse_encode_bool(self.forced, serializer);
   }
 
   @protected

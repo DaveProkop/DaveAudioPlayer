@@ -100,6 +100,10 @@ zapnutým crossfadem, ne navazující skladby alba) řídicí vlákno zvolí `Mi
   příchozí je nahraná od (první doba − 1 doba odcházející), takže její první doba padne
   přesně na střih,
 - bez změřeného tempa → crossfade.
+Ruční volba pro dvojici skladeb (`transition_override`, `kind` = gapless | crossfade |
+beatmatch | filter | echo | cut, `params` zatím `{}`) má přednost před nastavením i pravidlem
+alba; co dvojice neumí (chybí mřížka dob), skončí crossfadem. UI: ťuknutí na typ přechodu
+v kartě „Další“.
 Mixer jen vyhodnocuje `TransitionShape`; zpožďovací linka (max 2 s) je předalokovaná.
 `PlayerState.transition` hlásí UI typ a začátek příštího přechodu (pozice v odcházející
 skladbě; bez plánu = `Gapless` na konci skladby). UI ukazuje odpočet a tlačítko „Poslechnout

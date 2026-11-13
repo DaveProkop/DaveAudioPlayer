@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1383758017;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1146622830;
 
 // Section: executor
 
@@ -1269,6 +1269,48 @@ fn wire__crate__api__player__set_smart_transitions_impl(
         },
     )
 }
+fn wire__crate__api__player__set_transition_override_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_transition_override",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_from_track_id = <i64>::sse_decode(&mut deserializer);
+            let api_to_track_id = <i64>::sse_decode(&mut deserializer);
+            let api_kind =
+                <Option<crate::api::player::TransitionKindDto>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::player::set_transition_override(
+                            api_from_track_id,
+                            api_to_track_id,
+                            api_kind,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__player__set_ui_setting_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2028,6 +2070,19 @@ impl SseDecode for Option<crate::api::player::TransitionDto> {
     }
 }
 
+impl SseDecode for Option<crate::api::player::TransitionKindDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::player::TransitionKindDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2217,9 +2272,11 @@ impl SseDecode for crate::api::player::TransitionDto {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_kind = <crate::api::player::TransitionKindDto>::sse_decode(deserializer);
         let mut var_startMs = <i64>::sse_decode(deserializer);
+        let mut var_forced = <bool>::sse_decode(deserializer);
         return crate::api::player::TransitionDto {
             kind: var_kind,
             start_ms: var_startMs,
+            forced: var_forced,
         };
     }
 }
@@ -2309,16 +2366,22 @@ fn pde_ffi_dispatcher_primary_impl(
         35 => {
             wire__crate__api__player__set_smart_transitions_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__api__player__set_ui_setting_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__library__suggest_mix_order_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__library__track_details_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__library__ui_setting_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__player__set_transition_override_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        37 => wire__crate__api__player__set_ui_setting_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__player__set_volume_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__player__start_engine_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__player__stop_engine_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__library__suggest_mix_order_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__player__toggle_play_pause_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__library__track_count_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__library__track_details_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__library__tracks_by_ids_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__library__ui_setting_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2684,6 +2747,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::player::TransitionDto {
         [
             self.kind.into_into_dart().into_dart(),
             self.start_ms.into_into_dart().into_dart(),
+            self.forced.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3044,6 +3108,16 @@ impl SseEncode for Option<crate::api::player::TransitionDto> {
     }
 }
 
+impl SseEncode for Option<crate::api::player::TransitionKindDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::player::TransitionKindDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3171,6 +3245,7 @@ impl SseEncode for crate::api::player::TransitionDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::player::TransitionKindDto>::sse_encode(self.kind, serializer);
         <i64>::sse_encode(self.start_ms, serializer);
+        <bool>::sse_encode(self.forced, serializer);
     }
 }
 

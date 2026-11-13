@@ -997,3 +997,48 @@ fn two_energetic_tracks_of_different_tempo_cut_on_the_phrase() {
     let at_a = out[peak_near(&out, 34.0 * rate / 2.0, b_beat * rate / 2.0)].abs();
     assert!(at_a < 0.01, "a still playing: {at_a}");
 }
+
+#[test]
+fn a_chosen_transition_wins_over_the_settings_and_persists() {
+    let dir = TempDir::new("override");
+    let len = 2 * RATE;
+    write_wav(&dir.music().join("a.wav"), 1, len);
+    write_wav(&dir.music().join("b.wav"), 2, len);
+    let id = scan(&dir);
+
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    // Gapless for this pair although crossfade is on.
+    engine.send(Command::SetTransitionOverride {
+        from_track: id("a.wav"),
+        to_track: id("b.wav"),
+        kind: Some(TransitionKind::Gapless),
+    });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    let events = play_to_the_end(&engine);
+    engine.shutdown();
+
+    let announced = events.iter().find_map(|e| match e {
+        Event::State(s) => s.transition,
+        _ => None,
+    });
+    assert!(
+        announced.is_some_and(|t| t.kind == TransitionKind::Gapless && t.forced),
+        "{announced:?}"
+    );
+    let out = captured_from_first_sound(&capture);
+    let len = len as usize;
+    assert_eq!(out[len - 1], f32::from(sample(1, len as u32 - 1)) / 32768.0);
+    assert_eq!(out[len], f32::from(sample(2, 0)) / 32768.0, "no overlap");
+
+    let conn = open_writer(&dir.db()).unwrap();
+    let kind: String = conn
+        .query_row("SELECT kind FROM transition_override", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(kind, "gapless");
+}
