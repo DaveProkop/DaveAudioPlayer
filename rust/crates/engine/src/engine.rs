@@ -21,9 +21,7 @@ use dap_dsp::eq::{BAND_COUNT, MAX_GAIN_DB};
 use dap_dsp::gain::db_to_gain;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
-use dap_library::{
-    DbError, ScanJob, ScanReport, add_root, remove_root, repair_overlapping_roots,
-};
+use dap_library::{DbError, ScanJob, ScanReport, add_root, remove_root, repair_overlapping_roots};
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan, TransitionShape};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -43,6 +41,7 @@ const SETTING_POSITION: &str = "player.position_ms";
 const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
 const SETTING_SMART: &str = "player.smart_transitions";
+const SETTING_MIX_MODE: &str = "player.mix_mode";
 const SETTING_VOLUME: &str = "player.volume";
 const SETTING_EQ_ENABLED: &str = "eq.enabled";
 const SETTING_EQ_GAINS: &str = "eq.gains_db";
@@ -52,6 +51,8 @@ const DUCK_GAIN: f32 = 0.3;
 
 pub const DEFAULT_CROSSFADE_MS: u32 = 6000;
 pub const MAX_CROSSFADE_MS: u32 = 12_000;
+/// Crossfade length in the Chill mode.
+const CHILL_CROSSFADE_MS: u32 = 10_000;
 /// How often analysis progress is reported while results come in.
 const ANALYSIS_REPORT_EVERY: Duration = Duration::from_secs(4);
 /// Shorter fades than this are not worth it: the tracks just follow each other.
@@ -122,6 +123,8 @@ pub enum Command {
     /// Transitions chosen per pair of tracks (beatmatch, filter sweep, echo out) instead
     /// of a plain crossfade (when crossfade is on).
     SetSmartTransitions(bool),
+    /// Switches to a mix mode: its crossfade, its transitions and its mix ordering.
+    SetMixMode(MixMode),
     /// Fixes the transition from one track into another (`None` = automatic again). It
     /// wins over the settings and the album rule; a kind the tracks cannot do (no beat
     /// grid) falls back to a crossfade.
@@ -214,9 +217,70 @@ impl TransitionKind {
     }
 }
 
+/// How tracks pass into each other, as a whole profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixMode {
+    /// As mastered: gapless, nothing mixed.
+    Album,
+    /// Plain 6 s crossfades, silence trimmed.
+    Radio,
+    /// All smart transitions (beatmatch, cuts, echoes); the mix order builds energy up.
+    Party,
+    /// Long 10 s crossfades, beatmatch and filter sweeps but no cuts or echoes; the mix
+    /// order winds energy down.
+    Chill,
+}
+
+impl MixMode {
+    pub const ALL: [MixMode; 4] = [
+        MixMode::Album,
+        MixMode::Radio,
+        MixMode::Party,
+        MixMode::Chill,
+    ];
+
+    /// The name stored in the `player.mix_mode` setting.
+    pub fn name(self) -> &'static str {
+        match self {
+            MixMode::Album => "album",
+            MixMode::Radio => "radio",
+            MixMode::Party => "party",
+            MixMode::Chill => "chill",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    /// Crossfade length and whether transitions are chosen per pair of tracks.
+    fn profile(self) -> (u32, bool) {
+        match self {
+            MixMode::Album => (0, false),
+            MixMode::Radio => (DEFAULT_CROSSFADE_MS, false),
+            MixMode::Party => (DEFAULT_CROSSFADE_MS, true),
+            MixMode::Chill => (CHILL_CROSSFADE_MS, true),
+        }
+    }
+
+    /// The mode closest to separately stored crossfade and smart settings (from before
+    /// modes existed).
+    fn closest(crossfade_ms: u32, smart: bool) -> Self {
+        match (crossfade_ms, smart) {
+            (0, _) => MixMode::Album,
+            (_, false) => MixMode::Radio,
+            (ms, true) if ms >= CHILL_CROSSFADE_MS => MixMode::Chill,
+            _ => MixMode::Party,
+        }
+    }
+}
+
 /// Playback preferences, stored in the database.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayerSettings {
+    /// The profile below; `crossfade_ms` and `smart_transitions` follow it (the commands
+    /// that set them directly are for tests and tools).
+    pub mix_mode: MixMode,
     pub crossfade_ms: u32,
     pub normalize: bool,
     pub smart_transitions: bool,
@@ -249,7 +313,10 @@ pub enum Event {
     LibraryChanged,
     /// Background analysis progress (key, loudness): tracks still waiting, of all tracks.
     /// Sent every few seconds while results come in; library views refresh on it.
-    AnalysisProgress { pending: usize, total: usize },
+    AnalysisProgress {
+        pending: usize,
+        total: usize,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -581,13 +648,18 @@ impl Control {
             .and(read_setting(&reader, SETTING_POSITION))
             .unwrap_or(0)
             .max(0) as u64;
+        let crossfade_ms = read_setting(&reader, SETTING_CROSSFADE)
+            .map_or(DEFAULT_CROSSFADE_MS, |v| {
+                v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32
+            });
+        let smart_transitions = read_setting(&reader, SETTING_SMART).is_none_or(|v| v != 0);
         let settings = PlayerSettings {
-            crossfade_ms: read_setting(&reader, SETTING_CROSSFADE)
-                .map_or(DEFAULT_CROSSFADE_MS, |v| {
-                    v.clamp(0, i64::from(MAX_CROSSFADE_MS)) as u32
-                }),
+            mix_mode: read_setting_str(&reader, SETTING_MIX_MODE)
+                .and_then(|v| MixMode::from_name(&v))
+                .unwrap_or_else(|| MixMode::closest(crossfade_ms, smart_transitions)),
+            crossfade_ms,
             normalize: read_setting(&reader, SETTING_NORMALIZE).is_none_or(|v| v != 0),
-            smart_transitions: read_setting(&reader, SETTING_SMART).is_none_or(|v| v != 0),
+            smart_transitions,
             volume: read_setting_str(&reader, SETTING_VOLUME)
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| v.is_finite())
@@ -994,15 +1066,23 @@ impl Control {
         if current.beats.is_none() || self.beats(track_id).is_none() {
             return plain;
         }
+        // Chill keeps it smooth: no cuts, no echoes.
+        let chill = self.settings.mix_mode == MixMode::Chill;
         let hot = |id: i64| self.energy(id).is_some_and(|e| e >= HARD_CUT_ENERGY);
-        if hot(current.entry.track_id) && hot(track_id) {
+        if !chill && hot(current.entry.track_id) && hot(track_id) {
             return auto(Mix::HardCut).unwrap_or(plain);
         }
-        let clash = match (current.key, self.key(track_id)) {
-            (Some(a), Some(b)) => !a.compatible(b),
-            _ => false,
-        };
-        auto(if clash { Mix::EchoOut } else { Mix::FilterSweep }).unwrap_or(plain)
+        let clash = !chill
+            && match (current.key, self.key(track_id)) {
+                (Some(a), Some(b)) => !a.compatible(b),
+                _ => false,
+            };
+        auto(if clash {
+            Mix::EchoOut
+        } else {
+            Mix::FilterSweep
+        })
+        .unwrap_or(plain)
     }
 
     /// How track `track_id` comes in after `current` with transition `mix`, if the two
@@ -1022,9 +1102,7 @@ impl Control {
         match mix {
             Mix::Gapless => simple(0),
             // A crossfaded track starts at its first sound, not in its leading silence.
-            Mix::Crossfade | Mix::FilterSweep => {
-                simple(self.audio_bounds(track_id).0.unwrap_or(0))
-            }
+            Mix::Crossfade | Mix::FilterSweep => simple(self.audio_bounds(track_id).0.unwrap_or(0)),
             Mix::Beatmatch => {
                 let stretch = self.beatmatch_for(current, track_id)?;
                 Some(Incoming {
@@ -1186,9 +1264,13 @@ impl Control {
     fn beatmatch_plan(&self, current: &Loaded, end: u64) -> Option<TransitionPlan> {
         let beats = current.beats?;
         let len = (PHRASE_BEATS as f64 * beats.period).round() as u64;
-        self.beat_aligned_plan(current, end, len, PHRASE_BEATS, TransitionShape::Beatmatch {
-            swap: len / 2,
-        })
+        self.beat_aligned_plan(
+            current,
+            end,
+            len,
+            PHRASE_BEATS,
+            TransitionShape::Beatmatch { swap: len / 2 },
+        )
     }
 
     /// An echo out of `current`: on the last bar line that leaves room for the last beat
@@ -1197,7 +1279,13 @@ impl Control {
         let beats = current.beats?;
         let feed = beats.period.round() as u64;
         let len = ECHO_BEATS * feed;
-        self.beat_aligned_plan(current, end, len, BAR_BEATS, TransitionShape::EchoOut { feed })
+        self.beat_aligned_plan(
+            current,
+            end,
+            len,
+            BAR_BEATS,
+            TransitionShape::EchoOut { feed },
+        )
     }
 
     /// A transition of `len` frames out of `current` (ending by `end`) that starts on the
@@ -1352,7 +1440,10 @@ impl Control {
                 }
                 grids_changed = true;
             }
-            grids_changed |= self.next.as_ref().is_some_and(|n| n.entry.track_id == track_id);
+            grids_changed |= self
+                .next
+                .as_ref()
+                .is_some_and(|n| n.entry.track_id == track_id);
         }
         if grids_changed {
             // Beatmatching may be possible now (or no longer).
@@ -1384,7 +1475,12 @@ impl Control {
                  LEFT JOIN analysis a ON a.track_id = t.id
                  WHERE f.missing = 0",
                 [ANALYSIS_ALGO],
-                |r| Ok((r.get::<_, i64>(1).unwrap_or(0) as usize, r.get::<_, i64>(0)? as usize)),
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(1).unwrap_or(0) as usize,
+                        r.get::<_, i64>(0)? as usize,
+                    ))
+                },
             )
             .ok()
     }
@@ -1448,6 +1544,20 @@ impl Control {
             self.preload_next();
         }
         // The plan follows on the next tick.
+    }
+
+    fn set_mix_mode(&mut self, mode: MixMode) {
+        let (crossfade_ms, smart) = mode.profile();
+        self.settings.mix_mode = mode;
+        self.settings.crossfade_ms = crossfade_ms;
+        self.settings.smart_transitions = smart;
+        self.save_setting(SETTING_MIX_MODE, mode.name().to_string());
+        self.save_setting(SETTING_CROSSFADE, crossfade_ms.to_string());
+        self.save_setting(SETTING_SMART, i64::from(smart).to_string());
+        self.emit(Event::Settings(self.settings));
+        if self.current.is_some() {
+            self.preload_next();
+        }
     }
 
     fn set_smart_transitions(&mut self, on: bool) {
@@ -1589,7 +1699,9 @@ impl Control {
                 if self.queue.reorder_tail(&self.db, from, &ids) {
                     self.queue_changed();
                 } else {
-                    self.emit(Event::Error("fronta se mezitím změnila, řazení se nepoužilo".into()));
+                    self.emit(Event::Error(
+                        "fronta se mezitím změnila, řazení se nepoužilo".into(),
+                    ));
                 }
             }
             Command::ClearQueue => {
@@ -1661,6 +1773,7 @@ impl Control {
             Command::SetCrossfade { ms } => self.set_crossfade(ms),
             Command::SetNormalization(on) => self.set_normalization(on),
             Command::SetSmartTransitions(on) => self.set_smart_transitions(on),
+            Command::SetMixMode(mode) => self.set_mix_mode(mode),
             Command::SetTransitionOverride {
                 from_track,
                 to_track,
@@ -1679,17 +1792,19 @@ impl Control {
                     None => {}
                 }
             }
-            Command::RemoveFolder(root_id) => match self.db.call(move |c| remove_root(c, root_id)) {
-                Some(Ok(())) => {
-                    if let Some(w) = &self.watcher {
-                        w.refresh();
+            Command::RemoveFolder(root_id) => {
+                match self.db.call(move |c| remove_root(c, root_id)) {
+                    Some(Ok(())) => {
+                        if let Some(w) = &self.watcher {
+                            w.refresh();
+                        }
+                        self.reload_queue();
+                        self.emit(Event::LibraryChanged);
                     }
-                    self.reload_queue();
-                    self.emit(Event::LibraryChanged);
+                    Some(Err(e)) => self.emit(Event::Error(e.to_string())),
+                    None => {}
                 }
-                Some(Err(e)) => self.emit(Event::Error(e.to_string())),
-                None => {}
-            },
+            }
             Command::RescanLibrary => self.start_scan(ScanScope::All, false),
             Command::CancelScan => self.scan.cancel.store(true, Ordering::Relaxed),
             Command::Shutdown => {}
@@ -1809,7 +1924,13 @@ impl Control {
             match event {
                 MixerEvent::Position { token, frames } => {
                     if self.current.as_ref().is_some_and(|l| l.token == token) {
+                        let moved = self.position_frames != frames;
                         self.position_frames = frames;
+                        // Positions still arriving after a pause (the fade-out, events in
+                        // flight): the UI does not extrapolate then, so tell it.
+                        if moved && self.status == Status::Paused {
+                            self.emit_state();
+                        }
                     }
                 }
                 MixerEvent::Ended { token } => self.on_ended(token),

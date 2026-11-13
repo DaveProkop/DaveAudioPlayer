@@ -42,7 +42,9 @@ impl TempoDetector {
     pub fn new(sample_rate: u32, channels: usize) -> Self {
         let fft = RealFftPlanner::<f32>::new().plan_fft_forward(FRAME);
         let window = (0..FRAME)
-            .map(|i| (0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / FRAME as f64).cos()) as f32)
+            .map(|i| {
+                (0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / FRAME as f64).cos()) as f32
+            })
             .collect();
         Self {
             channels: channels.max(1),
@@ -137,7 +139,12 @@ impl TempoDetector {
         let min_lag = lag_of(240.0).floor() as usize;
         let max_lag = (lag_of(40.0).ceil() as usize * 2).min(n - 1);
         let mut acf = vec![0.0f64; max_lag + 2];
-        for (lag, a) in acf.iter_mut().enumerate().take(max_lag + 1).skip(min_lag / 2) {
+        for (lag, a) in acf
+            .iter_mut()
+            .enumerate()
+            .take(max_lag + 1)
+            .skip(min_lag / 2)
+        {
             let mut s = 0.0;
             for i in lag..n {
                 s += env[i] * env[i - lag];
@@ -196,7 +203,11 @@ impl TempoDetector {
         // tempo far more precisely than the autocorrelation peak. The phase follows the
         // kick drum (bass onsets), not hi-hats on the off-beats; without bass, everything.
         let low = rhythmic(&self.low_envelope, fr);
-        let env = if low.iter().map(|v| v * v).sum::<f64>() > energy * 0.01 { low } else { env };
+        let env = if low.iter().map(|v| v * v).sum::<f64>() > energy * 0.01 {
+            low
+        } else {
+            env
+        };
         let mut period = 60.0 * fr / bpm;
         let window = (fr * 30.0).min(n as f64 / 2.0);
         let start = phase(&env, 0.0, window, period);
@@ -343,12 +354,20 @@ mod tests {
         audio.extend(pattern(127.5, 90.0));
         let g = grid(&audio);
         assert!((g.bpm - 127.5).abs() < 0.02, "{} BPM", g.bpm);
-        assert!((g.first_beat_s - 0.3).abs() < 0.015, "first beat at {} s", g.first_beat_s);
+        assert!(
+            (g.first_beat_s - 0.3).abs() < 0.015,
+            "first beat at {} s",
+            g.first_beat_s
+        );
         // The grid still matches at the end: beat 190 (≈ 89.7 s) within 15 ms.
         let beat = 60.0 / g.bpm;
         let predicted = g.first_beat_s + 190.0 * beat;
         let actual = 0.3 + 190.0 * 60.0 / 127.5;
-        assert!((predicted - actual).abs() < 0.015, "drift {} s", predicted - actual);
+        assert!(
+            (predicted - actual).abs() < 0.015,
+            "drift {} s",
+            predicted - actual
+        );
     }
 
     #[test]

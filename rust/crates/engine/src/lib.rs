@@ -18,8 +18,8 @@ pub mod watcher;
 
 pub use db_writer::DbWriter;
 pub use engine::{
-    Command, DEFAULT_CROSSFADE_MS, Engine, EngineConfig, Event, MAX_CROSSFADE_MS, PlayerSettings,
-    PlayerState, ScanSummary, Status, TransitionKind, UpcomingTransition,
+    Command, DEFAULT_CROSSFADE_MS, Engine, EngineConfig, Event, MAX_CROSSFADE_MS, MixMode,
+    PlayerSettings, PlayerState, ScanSummary, Status, TransitionKind, UpcomingTransition,
 };
 pub use output::OutputConfig;
 pub use queue::{Queue, QueueEntry};

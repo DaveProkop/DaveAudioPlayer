@@ -94,6 +94,8 @@ dobu, prohození basů, návrat tempa). Chytré přechody podle páru skladeb: b
 filter sweep (jiné tempo), echo out (jiné tempo i tónina), tvrdý střih (dvě energické
 skladby), jinak crossfade; přepínač v nastavení. Energie skladby (hlasitost + tempo) ve
 štítku a v řazení fronty. Náhled přechodu (typ, odpočet, skok 10 s před mix) a ruční volba přechodu pro dvojici skladeb.
+Režimy mixu Album / Rádio / Párty / Chill (profil crossfadu, typů přechodů a směru energie
+v řazení) místo posuvníku crossfadu a přepínače.
 Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade-outu po poklesu
 o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),

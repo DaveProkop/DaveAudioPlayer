@@ -257,10 +257,14 @@ fn queue_edits_and_position_survive_a_restart() {
     );
     std::thread::sleep(Duration::from_millis(150)); // ~1.2 s of audio at 8x speed
     engine.send(Command::Pause);
-    let paused = last_state(&wait_for(
+    let mut paused_events = wait_for(
         &engine,
         |e| matches!(e, Event::State(s) if s.status == Status::Paused),
-    ));
+    );
+    // The last positions may still arrive after the pause.
+    std::thread::sleep(Duration::from_millis(300));
+    paused_events.extend(engine.events().try_iter());
+    let paused = last_state(&paused_events);
     assert!(paused.position_ms > 200, "{paused:?}");
     engine.shutdown();
 
@@ -364,7 +368,10 @@ fn add_folder_scans_in_batches_while_queue_edits_go_through() {
 
 fn captured_from_first_sound(capture: &Mutex<Vec<f32>>) -> Vec<f32> {
     let out = capture.lock().unwrap();
-    let start = out.iter().position(|&s| s != 0.0).expect("audio was played");
+    let start = out
+        .iter()
+        .position(|&s| s != 0.0)
+        .expect("audio was played");
     out[start..].to_vec()
 }
 
@@ -440,8 +447,11 @@ fn consecutive_album_tracks_stay_gapless_with_crossfade_on() {
     // WAV files carry no tags here; put both on one album as tracks 1 and 2.
     {
         let conn = open_writer(&dir.db()).unwrap();
-        conn.execute("INSERT INTO album (title, title_sort) VALUES ('Live', 'live')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO album (title, title_sort) VALUES ('Live', 'live')",
+            [],
+        )
+        .unwrap();
         let album = conn.last_insert_rowid();
         for (name, no) in [("01.wav", 1), ("02.wav", 2)] {
             conn.execute(
@@ -512,7 +522,10 @@ fn normalization_applies_the_measured_loudness() {
     // The test ramp is mostly infrasound, which K-weighting barely counts: it measures
     // quiet, and the true peak limits how far it may be turned up.
     let gain_db = dap_analysis::normalization_gain_db(Some(lufs), peak);
-    assert!(lufs < -18.0 && gain_db.abs() > 0.1, "{lufs} LUFS, {gain_db} dB");
+    assert!(
+        lufs < -18.0 && gain_db.abs() > 0.1,
+        "{lufs} LUFS, {gain_db} dB"
+    );
     let gain = 10f32.powf(gain_db as f32 / 20.0);
     let out = captured_from_first_sound(&capture);
     let i = 10_000;
@@ -615,7 +628,11 @@ fn volume_and_equalizer_survive_a_restart_but_ducking_does_not() {
     assert_eq!(s.eq_preamp_db, -3.0);
     let conn = open_writer(&dir.db()).unwrap();
     let theme: String = conn
-        .query_row("SELECT value FROM setting WHERE key = 'ui.theme'", [], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM setting WHERE key = 'ui.theme'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(theme, "light");
 }
@@ -680,17 +697,26 @@ fn analysis_detects_keys_but_keeps_keys_from_tags() {
         .ok()
     };
     let deadline = Instant::now() + Duration::from_secs(20);
-    while ![key_of("tagged.wav"), key_of("plain.wav")]
-        .iter()
-        .all(|k| k.as_ref().is_some_and(|(_, v)| *v >= dap_engine::analyzer::ANALYSIS_ALGO))
-    {
+    while ![key_of("tagged.wav"), key_of("plain.wav")].iter().all(|k| {
+        k.as_ref()
+            .is_some_and(|(_, v)| *v >= dap_engine::analyzer::ANALYSIS_ALGO)
+    }) {
         assert!(Instant::now() < deadline, "analysis did not finish");
         std::thread::sleep(Duration::from_millis(50));
     }
     engine.shutdown();
-    assert_eq!(key_of("tagged.wav").unwrap().0.as_deref(), Some("3B"), "tag key kept");
+    assert_eq!(
+        key_of("tagged.wav").unwrap().0.as_deref(),
+        Some("3B"),
+        "tag key kept"
+    );
     let detected = key_of("plain.wav").unwrap().0;
-    assert!(detected.as_deref().is_some_and(|k| dap_analysis::Camelot::parse(k).is_some()), "{detected:?}");
+    assert!(
+        detected
+            .as_deref()
+            .is_some_and(|k| dap_analysis::Camelot::parse(k).is_some()),
+        "{detected:?}"
+    );
 }
 
 #[test]
@@ -717,9 +743,10 @@ fn upcoming_items_can_be_reordered_and_the_order_persists() {
 
     let wanted = vec![ids[2], ids[0], ids[1]];
     engine.send(Command::ReorderUpcoming(wanted.clone()));
-    wait_for(&engine, |e| {
-        matches!(e, Event::Queue(q) if q.iter().map(|x| x.id).collect::<Vec<_>>() == wanted)
-    });
+    wait_for(
+        &engine,
+        |e| matches!(e, Event::Queue(q) if q.iter().map(|x| x.id).collect::<Vec<_>>() == wanted),
+    );
     engine.shutdown();
 
     let engine = start(&dir, None);
@@ -767,8 +794,16 @@ fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
     let dir = TempDir::new("beatmatch");
     // a: 120 BPM, first beat 0.25 s; clicks only in its first 2 s so that later the
     // incoming track can be heard alone. b: 125 BPM, first beat 0.4 s.
-    write_clicks(&dir.music().join("a.wav"), 20.0, (0..4).map(|k| 0.25 + 0.5 * k as f64));
-    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.4 + 0.48 * k as f64));
+    write_clicks(
+        &dir.music().join("a.wav"),
+        20.0,
+        (0..4).map(|k| 0.25 + 0.5 * k as f64),
+    );
+    write_clicks(
+        &dir.music().join("b.wav"),
+        20.0,
+        (0..40).map(|k| 0.4 + 0.48 * k as f64),
+    );
     let id = scan(&dir);
     {
         let conn = open_writer(&dir.db()).unwrap();
@@ -809,7 +844,10 @@ fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
     // The incoming fade starts from silence: check from its third beat on.
     for j in 2..16 {
         let expected = (16 + j) as f64 * beat;
-        let (lo, hi) = ((expected - 0.4 * beat) as usize, (expected + 0.4 * beat) as usize);
+        let (lo, hi) = (
+            (expected - 0.4 * beat) as usize,
+            (expected + 0.4 * beat) as usize,
+        );
         let peak = lo
             + out[lo..hi]
                 .iter()
@@ -875,7 +913,10 @@ fn crossfade_skips_trailing_and_leading_silence() {
 
 /// Peak position (frame) in `out` within ±40% of a beat around `expected`.
 fn peak_near(out: &[f32], expected: f64, beat: f64) -> usize {
-    let (lo, hi) = ((expected - 0.4 * beat) as usize, (expected + 0.4 * beat) as usize);
+    let (lo, hi) = (
+        (expected - 0.4 * beat) as usize,
+        (expected + 0.4 * beat) as usize,
+    );
     lo + out[lo..hi]
         .iter()
         .enumerate()
@@ -889,9 +930,17 @@ fn clashing_tempo_and_key_echo_out_and_the_next_track_lands_on_the_beat() {
     let dir = TempDir::new("echo");
     // a: 120 BPM in 8A, clicks on every beat. b: 140 BPM in 3B (far apart), first beat
     // at 0.8 s.
-    write_clicks(&dir.music().join("a.wav"), 20.0, (0..40).map(|k| 0.25 + 0.5 * k as f64));
+    write_clicks(
+        &dir.music().join("a.wav"),
+        20.0,
+        (0..40).map(|k| 0.25 + 0.5 * k as f64),
+    );
     let b_beat = 60.0 / 140.0;
-    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.8 + b_beat * k as f64));
+    write_clicks(
+        &dir.music().join("b.wav"),
+        20.0,
+        (0..40).map(|k| 0.8 + b_beat * k as f64),
+    );
     let id = scan(&dir);
     {
         let conn = open_writer(&dir.db()).unwrap();
@@ -900,7 +949,13 @@ fn clashing_tempo_and_key_echo_out_and_the_next_track_lands_on_the_beat() {
                 "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
                                        first_beat_ms, key_camelot, key_confidence, analyzed_at)
                  VALUES (?1, ?2, ?3, 1.0, ?4, ?5, 1.0, 0)",
-                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first, key],
+                rusqlite::params![
+                    id(name),
+                    dap_engine::analyzer::ANALYSIS_ALGO,
+                    bpm,
+                    first,
+                    key
+                ],
             )
             .unwrap();
         }
@@ -943,9 +998,17 @@ fn clashing_tempo_and_key_echo_out_and_the_next_track_lands_on_the_beat() {
 #[test]
 fn two_energetic_tracks_of_different_tempo_cut_on_the_phrase() {
     let dir = TempDir::new("cut");
-    write_clicks(&dir.music().join("a.wav"), 20.0, (0..40).map(|k| 0.25 + 0.5 * k as f64));
+    write_clicks(
+        &dir.music().join("a.wav"),
+        20.0,
+        (0..40).map(|k| 0.25 + 0.5 * k as f64),
+    );
     let b_beat = 60.0 / 140.0;
-    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.8 + b_beat * k as f64));
+    write_clicks(
+        &dir.music().join("b.wav"),
+        20.0,
+        (0..40).map(|k| 0.8 + b_beat * k as f64),
+    );
     let id = scan(&dir);
     {
         // Loud masters at 120 and 140 BPM: both energetic, too far apart to beatmatch.
@@ -1041,4 +1104,39 @@ fn a_chosen_transition_wins_over_the_settings_and_persists() {
         .query_row("SELECT kind FROM transition_override", [], |r| r.get(0))
         .unwrap();
     assert_eq!(kind, "gapless");
+}
+
+#[test]
+fn a_mix_mode_sets_its_profile_and_survives_a_restart() {
+    use dap_engine::MixMode;
+    let dir = TempDir::new("mixmode");
+    let _ = scan(&dir);
+    // Before modes existed: crossfade off means the Album mode.
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        conn.execute("INSERT INTO setting (key, value) VALUES ('player.crossfade_ms', '0')", [])
+            .unwrap();
+    }
+    let engine = start_with(&dir, None);
+    let s = first_settings(&engine);
+    assert_eq!((s.mix_mode, s.crossfade_ms), (MixMode::Album, 0));
+
+    engine.send(Command::SetMixMode(MixMode::Chill));
+    let s = first_settings(&engine);
+    assert_eq!(
+        (s.mix_mode, s.crossfade_ms, s.smart_transitions),
+        (MixMode::Chill, 10_000, true)
+    );
+    engine.shutdown();
+
+    let engine = start_with(&dir, None);
+    let s = first_settings(&engine);
+    assert_eq!((s.mix_mode, s.crossfade_ms), (MixMode::Chill, 10_000));
+    engine.send(Command::SetMixMode(MixMode::Radio));
+    let s = first_settings(&engine);
+    assert_eq!(
+        (s.mix_mode, s.crossfade_ms, s.smart_transitions),
+        (MixMode::Radio, 6000, false)
+    );
+    engine.shutdown();
 }

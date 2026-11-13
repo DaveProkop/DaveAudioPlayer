@@ -136,8 +136,10 @@ impl Worker {
             .reader
             .prepare("SELECT id, path FROM library_root WHERE enabled = 1")
             .and_then(|mut st| {
-                st.query_map([], |r| Ok((r.get(0)?, PathBuf::from(r.get::<_, String>(1)?))))?
-                    .collect()
+                st.query_map([], |r| {
+                    Ok((r.get(0)?, PathBuf::from(r.get::<_, String>(1)?)))
+                })?
+                .collect()
             })
             .unwrap_or_default();
         let gone: Vec<i64> = self
@@ -196,7 +198,12 @@ mod tests {
         for p in ["a/song.MP3", "a/x.flac", "a/cover.jpg", "a/Album", "a/b/c"] {
             assert!(is_relevant(Path::new(p)), "{p}");
         }
-        for p in ["a/song.mp3.part", "a/notes.txt", "a/library.db-wal", "a/x.tmp"] {
+        for p in [
+            "a/song.mp3.part",
+            "a/notes.txt",
+            "a/library.db-wal",
+            "a/x.tmp",
+        ] {
             assert!(!is_relevant(Path::new(p)), "{p}");
         }
     }

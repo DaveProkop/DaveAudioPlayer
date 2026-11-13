@@ -23,7 +23,9 @@ fn detect(path: &std::path::Path) -> Option<(f64, f64)> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let db = args.next().expect("usage: bpm_accuracy <library.db> [max tracks]");
+    let db = args
+        .next()
+        .expect("usage: bpm_accuracy <library.db> [max tracks]");
     let max: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(300);
     let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).expect("open db");
     let mut st = conn
@@ -73,7 +75,10 @@ fn main() {
             wrong += 1;
             "wrong"
         };
-        eprintln!("{n:4} tag {tag:6.1} found {found:6.1} {conf:4.2} {kind:6} {}", path.display());
+        eprintln!(
+            "{n:4} tag {tag:6.1} found {found:6.1} {conf:4.2} {kind:6} {}",
+            path.display()
+        );
     }
     let p = |x: usize| 100.0 * x as f64 / n.max(1) as f64;
     println!("tracks with a BPM tag: {n}");

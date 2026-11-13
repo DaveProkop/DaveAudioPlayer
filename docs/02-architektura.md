@@ -85,6 +85,19 @@ knihovně a balady od tanečních skladeb neoddělily (`--example energy_report`
 staré tiché mastery vycházejí méně energické. Použití: řazení fronty (cena skoku 1 bod za
 0,15, max. 3, neznámá energie nic nestojí), tvrdý střih, štítek „Energie N/10“.
 
+## Režimy mixu
+`player.mix_mode` (`MixMode`) je celý profil; `crossfade_ms` a `smart_transitions` se
+nastaví podle něj (příkazy na ně zvlášť zůstávají pro testy a nástroje):
+- **Album**: crossfade 0 → vše bez mezery, nic se neořezává,
+- **Rádio**: crossfade 6 s, bez chytrých přechodů (ořez ticha ano),
+- **Párty**: 6 s, všechny chytré přechody; řazení fronty `EnergyTrend::Rising`,
+- **Chill**: 10 s, beatmatch a filter sweep, ne střih ani echo (nesedící tónina → filtr);
+  řazení `Falling`.
+Bez uloženého režimu (starší DB) se odvodí z crossfadu a přepínače. Ruční volba přechodu
+pro dvojici platí ve všech režimech. Řazení s trendem: energie proti směru stojí dvojnásob;
+protože cena už není symetrická, 2-opt sčítá i obrácené vnitřní hrany (úseky max. 32) a
+po něm se ještě přesouvají jednotlivé skladby.
+
 ## Výběr typu přechodu
 Při nahrání dalšího decku (`incoming_for`, nastavení `player.smart_transitions`, jen se
 zapnutým crossfadem, ne navazující skladby alba) řídicí vlákno zvolí `Mix`:

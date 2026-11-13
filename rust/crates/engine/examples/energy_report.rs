@@ -13,7 +13,9 @@ use rusqlite::{Connection, OpenFlags};
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let db = args.next().expect("usage: energy_report <library.db> [max tracks] [every nth]");
+    let db = args
+        .next()
+        .expect("usage: energy_report <library.db> [max tracks] [every nth]");
     let max: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(60);
     let step: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(1);
     let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).expect("open db");
@@ -35,15 +37,21 @@ fn main() {
         .collect();
     let mut rows = Vec::new();
     for (path, rel) in files {
-        let Ok(mut decoder) = Decoder::open(&path) else { continue };
+        let Ok(mut decoder) = Decoder::open(&path) else {
+            continue;
+        };
         let info = decoder.info().clone();
-        let Ok(mut meter) = LoudnessMeter::new(info.sample_rate, info.channels) else { continue };
+        let Ok(mut meter) = LoudnessMeter::new(info.sample_rate, info.channels) else {
+            continue;
+        };
         let mut tempo = TempoDetector::new(info.sample_rate, info.channels);
         while let Ok(Some(chunk)) = decoder.next_chunk() {
             let _ = meter.push(chunk);
             tempo.push(chunk);
         }
-        let Some(lufs) = meter.finish().integrated_lufs else { continue };
+        let Some(lufs) = meter.finish().integrated_lufs else {
+            continue;
+        };
         let bpm = tempo.finish().map(|(b, _)| b);
         rows.push((track_energy(lufs, bpm), lufs, bpm.unwrap_or(0.0), rel));
     }

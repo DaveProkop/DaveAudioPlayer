@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1146622830;
+  int get rustContentHash => -1478549619;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -169,6 +169,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<void> crateApiPlayerSetEqEnabled({required bool enabled});
+
+  Future<void> crateApiPlayerSetMixMode({required MixModeDto mode});
 
   Future<void> crateApiPlayerSetNormalization({required bool enabled});
 
@@ -1171,6 +1173,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_eq_enabled", argNames: ["enabled"]);
 
   @override
+  Future<void> crateApiPlayerSetMixMode({required MixModeDto mode}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_mix_mode_dto(mode, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 34,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiPlayerSetMixModeConstMeta,
+        argValues: [mode],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPlayerSetMixModeConstMeta =>
+      const TaskConstMeta(debugName: "set_mix_mode", argNames: ["mode"]);
+
+  @override
   Future<void> crateApiPlayerSetNormalization({required bool enabled}) {
     return handler.executeNormal(
       NormalTask(
@@ -1180,7 +1210,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1211,7 +1241,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1248,7 +1278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1283,7 +1313,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1313,7 +1343,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1341,7 +1371,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1368,7 +1398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1402,7 +1432,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1432,7 +1462,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1459,7 +1489,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1489,7 +1519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1517,7 +1547,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1545,7 +1575,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 47,
             port: port_,
           );
         },
@@ -1817,6 +1847,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MixModeDto dco_decode_mix_mode_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MixModeDto.values[raw as int];
+  }
+
+  @protected
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
@@ -1908,16 +1944,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlayerSettingsDto dco_decode_player_settings_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return PlayerSettingsDto(
-      crossfadeMs: dco_decode_u_32(arr[0]),
-      normalize: dco_decode_bool(arr[1]),
-      smartTransitions: dco_decode_bool(arr[2]),
-      volume: dco_decode_f_64(arr[3]),
-      eqEnabled: dco_decode_bool(arr[4]),
-      eqGainsDb: dco_decode_list_prim_f_64_strict(arr[5]),
-      eqPreampDb: dco_decode_f_64(arr[6]),
+      mixMode: dco_decode_mix_mode_dto(arr[0]),
+      crossfadeMs: dco_decode_u_32(arr[1]),
+      normalize: dco_decode_bool(arr[2]),
+      smartTransitions: dco_decode_bool(arr[3]),
+      volume: dco_decode_f_64(arr[4]),
+      eqEnabled: dco_decode_bool(arr[5]),
+      eqGainsDb: dco_decode_list_prim_f_64_strict(arr[6]),
+      eqPreampDb: dco_decode_f_64(arr[7]),
     );
   }
 
@@ -2381,6 +2418,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MixModeDto sse_decode_mix_mode_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MixModeDto.values[inner];
+  }
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2551,6 +2595,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_mixMode = sse_decode_mix_mode_dto(deserializer);
     var var_crossfadeMs = sse_decode_u_32(deserializer);
     var var_normalize = sse_decode_bool(deserializer);
     var var_smartTransitions = sse_decode_bool(deserializer);
@@ -2559,6 +2604,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_eqGainsDb = sse_decode_list_prim_f_64_strict(deserializer);
     var var_eqPreampDb = sse_decode_f_64(deserializer);
     return PlayerSettingsDto(
+      mixMode: var_mixMode,
       crossfadeMs: var_crossfadeMs,
       normalize: var_normalize,
       smartTransitions: var_smartTransitions,
@@ -3041,6 +3087,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_mix_mode_dto(MixModeDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3209,6 +3261,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_mix_mode_dto(self.mixMode, serializer);
     sse_encode_u_32(self.crossfadeMs, serializer);
     sse_encode_bool(self.normalize, serializer);
     sse_encode_bool(self.smartTransitions, serializer);

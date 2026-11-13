@@ -9,7 +9,8 @@ use anyhow::{anyhow, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dap_dsp::eq::BAND_COUNT;
 use dap_engine::{
-    Command, Engine, EngineConfig, Event, OutputConfig, PlayerState, Status, TransitionKind,
+    Command, Engine, EngineConfig, Event, MixMode, OutputConfig, PlayerState, Status,
+    TransitionKind,
 };
 use flutter_rust_bridge::frb;
 use rusqlite::Connection;
@@ -192,6 +193,16 @@ pub fn set_smart_transitions(enabled: bool) -> Result<()> {
     send(Command::SetSmartTransitions(enabled))
 }
 
+/// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
+pub fn set_mix_mode(mode: MixModeDto) -> Result<()> {
+    send(Command::SetMixMode(match mode {
+        MixModeDto::Album => MixMode::Album,
+        MixModeDto::Radio => MixMode::Radio,
+        MixModeDto::Party => MixMode::Party,
+        MixModeDto::Chill => MixMode::Chill,
+    }))
+}
+
 /// Fixes the transition from track `from_track_id` into `to_track_id` (`None` = automatic
 /// again). It is stored and wins over the settings; a kind the two tracks cannot do (no
 /// analyzed beat grid, too different tempos for a beatmatch) falls back to a crossfade.
@@ -365,8 +376,21 @@ pub struct ScanSummaryDto {
     pub cancelled: bool,
 }
 
+/// How tracks pass into each other, as a whole profile.
+pub enum MixModeDto {
+    /// As mastered: gapless, nothing mixed.
+    Album,
+    /// Plain 6 s crossfades.
+    Radio,
+    /// All smart transitions; the mix order builds energy up.
+    Party,
+    /// Long 10 s crossfades, no cuts or echoes; the mix order winds energy down.
+    Chill,
+}
+
 /// Playback preferences as stored by the engine.
 pub struct PlayerSettingsDto {
+    pub mix_mode: MixModeDto,
     pub crossfade_ms: u32,
     pub normalize: bool,
     pub smart_transitions: bool,
@@ -468,6 +492,12 @@ fn to_dto(event: Event) -> AppEvent {
         },
         Event::Settings(s) => AppEvent {
             settings: Some(PlayerSettingsDto {
+                mix_mode: match s.mix_mode {
+                    MixMode::Album => MixModeDto::Album,
+                    MixMode::Radio => MixModeDto::Radio,
+                    MixMode::Party => MixModeDto::Party,
+                    MixMode::Chill => MixModeDto::Chill,
+                },
                 crossfade_ms: s.crossfade_ms,
                 normalize: s.normalize,
                 smart_transitions: s.smart_transitions,

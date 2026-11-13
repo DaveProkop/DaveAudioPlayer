@@ -57,7 +57,10 @@ impl BoundsDetector {
 
     pub fn push(&mut self, interleaved: &[f32]) {
         for frame in interleaved.chunks_exact(self.channels) {
-            self.acc += frame.iter().map(|&s| f64::from(s) * f64::from(s)).sum::<f64>()
+            self.acc += frame
+                .iter()
+                .map(|&s| f64::from(s) * f64::from(s))
+                .sum::<f64>()
                 / self.channels as f64;
             self.count += 1;
             if self.count == self.block_frames {
@@ -73,7 +76,11 @@ impl BoundsDetector {
         if self.count > 0 {
             self.blocks.push(self.acc / self.count as f64);
         }
-        let db: Vec<f64> = self.blocks.iter().map(|&p| 10.0 * (p + 1e-15).log10()).collect();
+        let db: Vec<f64> = self
+            .blocks
+            .iter()
+            .map(|&p| 10.0 * (p + 1e-15).log10())
+            .collect();
         let mut sorted: Vec<f64> = db.iter().copied().filter(|&d| d > -100.0).collect();
         if sorted.is_empty() {
             return None;
@@ -136,7 +143,9 @@ mod tests {
                 seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                 let noise = (seed >> 8) as f64 / f64::from(1u32 << 24) * 2.0 - 1.0;
                 // Uniform noise has RMS 1/sqrt(3).
-                level_db(t).map_or(0.0, |db| (noise * 3f64.sqrt() * 10f64.powf(db / 20.0)) as f32)
+                level_db(t).map_or(0.0, |db| {
+                    (noise * 3f64.sqrt() * 10f64.powf(db / 20.0)) as f32
+                })
             })
             .collect()
     }

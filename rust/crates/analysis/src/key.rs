@@ -17,12 +17,18 @@ pub struct Camelot {
     pub minor: bool,
 }
 
-const NOTES: [&str; 12] = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const NOTES: [&str; 12] = [
+    "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+];
 
 impl Key {
     pub fn camelot(self) -> Camelot {
         // The relative major shares the wheel number; majors step by fifths from C = 8B.
-        let major_tonic = if self.minor { (self.tonic + 3) % 12 } else { self.tonic };
+        let major_tonic = if self.minor {
+            (self.tonic + 3) % 12
+        } else {
+            self.tonic
+        };
         let number = (u32::from(major_tonic) * 7 % 12 + 7) % 12 + 1;
         Camelot {
             number: number as u8,
@@ -32,7 +38,11 @@ impl Key {
 
     /// "Am", "F#", "Bbm".
     pub fn name(self) -> String {
-        format!("{}{}", NOTES[self.tonic as usize], if self.minor { "m" } else { "" })
+        format!(
+            "{}{}",
+            NOTES[self.tonic as usize],
+            if self.minor { "m" } else { "" }
+        )
     }
 }
 
@@ -41,7 +51,11 @@ impl Camelot {
         // Inverse of `Key::camelot`: number n → major tonic (n − 8) · 7 (mod 12).
         let major_tonic = ((i32::from(self.number) - 8).rem_euclid(12) * 7 % 12) as u8;
         Key {
-            tonic: if self.minor { (major_tonic + 9) % 12 } else { major_tonic },
+            tonic: if self.minor {
+                (major_tonic + 9) % 12
+            } else {
+                major_tonic
+            },
             minor: self.minor,
         }
     }
@@ -67,7 +81,9 @@ impl Camelot {
             "B" | "b" => false,
             _ => return None,
         };
-        (1..=12).contains(&number).then_some(Camelot { number, minor })
+        (1..=12)
+            .contains(&number)
+            .then_some(Camelot { number, minor })
     }
 }
 
@@ -149,14 +165,22 @@ pub struct KeyProfiles {
 #[allow(clippy::approx_constant)]
 pub const TEMPERLEY: KeyProfiles = KeyProfiles {
     name: "temperley",
-    major: [7.24, 3.50, 3.58, 2.85, 5.82, 4.56, 2.45, 6.99, 3.34, 4.56, 4.07, 4.46],
-    minor: [7.00, 3.14, 4.36, 5.40, 3.67, 4.09, 3.91, 6.20, 3.63, 2.87, 5.35, 3.83],
+    major: [
+        7.24, 3.50, 3.58, 2.85, 5.82, 4.56, 2.45, 6.99, 3.34, 4.56, 4.07, 4.46,
+    ],
+    minor: [
+        7.00, 3.14, 4.36, 5.40, 3.67, 4.09, 3.91, 6.20, 3.63, 2.87, 5.35, 3.83,
+    ],
 };
 
 pub const KRUMHANSL: KeyProfiles = KeyProfiles {
     name: "krumhansl",
-    major: [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-    minor: [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+    major: [
+        6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
+    ],
+    minor: [
+        6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
+    ],
 };
 
 /// KeyFinder (Ibrahim Sha'ath).
@@ -169,8 +193,14 @@ pub const SHAATH: KeyProfiles = KeyProfiles {
 /// Electronic dance music (Faraldo et al., "edma").
 pub const EDMA: KeyProfiles = KeyProfiles {
     name: "edma",
-    major: [0.1652, 0.0475, 0.0829, 0.0669, 0.0999, 0.0927, 0.0529, 0.1316, 0.0522, 0.0744, 0.0553, 0.0784],
-    minor: [0.1724, 0.0400, 0.0761, 0.1211, 0.0575, 0.0854, 0.0436, 0.1151, 0.0601, 0.0592, 0.0726, 0.0632],
+    major: [
+        0.1652, 0.0475, 0.0829, 0.0669, 0.0999, 0.0927, 0.0529, 0.1316, 0.0522, 0.0744, 0.0553,
+        0.0784,
+    ],
+    minor: [
+        0.1724, 0.0400, 0.0761, 0.1211, 0.0575, 0.0854, 0.0436, 0.1151, 0.0601, 0.0592, 0.0726,
+        0.0632,
+    ],
 };
 
 pub const ALL_PROFILES: [KeyProfiles; 4] = [TEMPERLEY, KRUMHANSL, SHAATH, EDMA];
@@ -188,7 +218,11 @@ fn correlation(a: &[f64; 12], b: &[f64; 12]) -> f64 {
         da += x * x;
         db += y * y;
     }
-    if da == 0.0 || db == 0.0 { 0.0 } else { num / (da * db).sqrt() }
+    if da == 0.0 || db == 0.0 {
+        0.0
+    } else {
+        num / (da * db).sqrt()
+    }
 }
 
 /// The best matching key for a chroma vector (energy per pitch class, C = 0), with a
@@ -205,7 +239,11 @@ pub fn key_from_chroma_with(chroma: &[f64; 12], profiles: &KeyProfiles) -> Optio
     let mut scores: Vec<(Key, f64)> = Vec::with_capacity(24);
     for tonic in 0..12u8 {
         for minor in [false, true] {
-            let profile = if minor { &profiles.minor } else { &profiles.major };
+            let profile = if minor {
+                &profiles.minor
+            } else {
+                &profiles.major
+            };
             let mut rotated = [0.0; 12];
             for (i, r) in rotated.iter_mut().enumerate() {
                 *r = profile[(i + 12 - tonic as usize) % 12];
@@ -216,7 +254,11 @@ pub fn key_from_chroma_with(chroma: &[f64; 12], profiles: &KeyProfiles) -> Optio
     scores.sort_by(|a, b| b.1.total_cmp(&a.1));
     let (best, top) = scores[0];
     let second = scores[1].1;
-    let confidence = if top <= 0.0 { 0.0 } else { ((top - second) / top * 10.0).clamp(0.0, 1.0) };
+    let confidence = if top <= 0.0 {
+        0.0
+    } else {
+        ((top - second) / top * 10.0).clamp(0.0, 1.0)
+    };
     Some((best, confidence))
 }
 
@@ -283,7 +325,15 @@ mod tests {
     fn chroma_of_a_major_and_a_minor_scale() {
         // Weighted like real music: tonic, fifth and third strongest.
         let mut c_major = [0.0; 12];
-        for (pc, w) in [(0, 9.0), (2, 3.0), (4, 6.0), (5, 3.0), (7, 8.0), (9, 3.0), (11, 2.5)] {
+        for (pc, w) in [
+            (0, 9.0),
+            (2, 3.0),
+            (4, 6.0),
+            (5, 3.0),
+            (7, 8.0),
+            (9, 3.0),
+            (11, 2.5),
+        ] {
             c_major[pc] = w;
         }
         let (k, conf) = key_from_chroma(&c_major).unwrap();
@@ -291,10 +341,21 @@ mod tests {
         assert!(conf > 0.0);
 
         let mut a_minor = [0.0; 12];
-        for (pc, w) in [(9, 9.0), (11, 3.0), (0, 6.0), (2, 3.0), (4, 8.0), (5, 3.0), (8, 3.0)] {
+        for (pc, w) in [
+            (9, 9.0),
+            (11, 3.0),
+            (0, 6.0),
+            (2, 3.0),
+            (4, 8.0),
+            (5, 3.0),
+            (8, 3.0),
+        ] {
             a_minor[pc] = w;
         }
-        assert_eq!(key_from_chroma(&a_minor).unwrap().0.camelot().to_string(), "8A");
+        assert_eq!(
+            key_from_chroma(&a_minor).unwrap().0.camelot().to_string(),
+            "8A"
+        );
         assert!(key_from_chroma(&[0.0; 12]).is_none());
     }
 }

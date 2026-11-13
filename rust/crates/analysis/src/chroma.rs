@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use realfft::{RealFftPlanner, RealToComplex};
 use realfft::num_complex::Complex;
+use realfft::{RealFftPlanner, RealToComplex};
 
 use crate::key::{Key, key_from_chroma};
 
@@ -123,10 +123,15 @@ impl KeyDetector {
         let mut block = [0.0f64; 12];
         for &(k, pc, w) in &self.bins {
             let m = self.spectrum[k].norm();
-            if o.peaks_only && (m <= self.spectrum[k - 1].norm() || m < self.spectrum[k + 1].norm()) {
+            if o.peaks_only && (m <= self.spectrum[k - 1].norm() || m < self.spectrum[k + 1].norm())
+            {
                 continue;
             }
-            let v = if o.log_magnitude { (1.0 + f64::from(m)).ln() } else { f64::from(m) };
+            let v = if o.log_magnitude {
+                (1.0 + f64::from(m)).ln()
+            } else {
+                f64::from(m)
+            };
             block[pc] += v * f64::from(w);
         }
         // Each block counts the same, so loud passages do not decide alone; near-silence
@@ -187,20 +192,32 @@ mod tests {
         for chunk in samples.chunks(4096) {
             d.push(chunk);
         }
-        d.finish().map(|(k, _)| k.camelot().to_string()).unwrap_or_default()
+        d.finish()
+            .map(|(k, _)| k.camelot().to_string())
+            .unwrap_or_default()
     }
 
     #[test]
     fn detects_c_major_from_i_iv_v_i() {
         // C–E–G, F–A–C, G–B–D, C–E–G with the bass note an octave down.
-        let audio = progression(&[&[48, 60, 64, 67], &[53, 60, 65, 69], &[55, 59, 62, 67], &[48, 60, 64, 67]]);
+        let audio = progression(&[
+            &[48, 60, 64, 67],
+            &[53, 60, 65, 69],
+            &[55, 59, 62, 67],
+            &[48, 60, 64, 67],
+        ]);
         assert_eq!(detect(&audio), "8B");
     }
 
     #[test]
     fn detects_a_minor_from_i_iv_v_i() {
         // Am, Dm, E (with G#), Am.
-        let audio = progression(&[&[45, 57, 60, 64], &[50, 57, 62, 65], &[52, 56, 59, 64], &[45, 57, 60, 64]]);
+        let audio = progression(&[
+            &[45, 57, 60, 64],
+            &[50, 57, 62, 65],
+            &[52, 56, 59, 64],
+            &[45, 57, 60, 64],
+        ]);
         assert_eq!(detect(&audio), "8A");
     }
 

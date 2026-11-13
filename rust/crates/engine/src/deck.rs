@@ -127,15 +127,9 @@ pub fn spawn_deck(
         .spawn(move || {
             let result = match (path, stretch) {
                 (Some(p), None) => decode(&p, start_ms, out_rate, out_channels, tx, &thread_info),
-                (Some(p), Some(plan)) => decode_stretched(
-                    &p,
-                    start_ms,
-                    plan,
-                    out_rate,
-                    out_channels,
-                    tx,
-                    &thread_info,
-                ),
+                (Some(p), Some(plan)) => {
+                    decode_stretched(&p, start_ms, plan, out_rate, out_channels, tx, &thread_info)
+                }
                 (None, _) => Err("file is not available".into()),
             };
             if let Err(e) = result {
@@ -144,7 +138,9 @@ pub fn spawn_deck(
             thread_finished.store(true, Ordering::Release);
         });
     if let Err(e) = spawned {
-        let _ = info.failure.set(format!("cannot start decoder thread: {e}"));
+        let _ = info
+            .failure
+            .set(format!("cannot start decoder thread: {e}"));
         finished.store(true, Ordering::Release);
     }
 
@@ -244,7 +240,8 @@ fn decode(
     let mut source = Source::open(path, start_frame, out_rate, out_channels)?;
     if let Some(total) = source.total {
         let remaining = total.saturating_sub(source.position);
-        deck.end_frame.store(start_frame + remaining, Ordering::Release);
+        deck.end_frame
+            .store(start_frame + remaining, Ordering::Release);
     }
     let mut buf = Vec::new();
     loop {
@@ -277,7 +274,10 @@ fn decode_stretched(
     let ch = out_channels;
     let mut stretch = Stretch::new(ch, out_rate);
     let x = (start_ms * u64::from(out_rate) / 1000) as i64;
-    let (in_lat, out_lat) = (stretch.input_latency() as i64, stretch.output_latency() as i64);
+    let (in_lat, out_lat) = (
+        stretch.input_latency() as i64,
+        stretch.output_latency() as i64,
+    );
     let p0 = x + in_lat + (out_lat as f64 * plan.rate).round() as i64;
     let preroll_start = p0 - 2 * in_lat;
 
@@ -328,7 +328,10 @@ fn decode_stretched(
         push_all(tx, &samples[..keep as usize * ch])
     };
     loop {
-        let target = p0 + plan.source_at((produced + STRETCH_BLOCK as u64) as f64).floor() as i64;
+        let target = p0
+            + plan
+                .source_at((produced + STRETCH_BLOCK as u64) as f64)
+                .floor() as i64;
         let more = fill(&mut fifo, fifo_pos, target)?;
         let available = fifo_pos + (fifo.len() / ch) as i64;
         if !more && available < target {

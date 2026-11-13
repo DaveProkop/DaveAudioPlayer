@@ -116,8 +116,10 @@ impl Queue {
         if tail != wanted {
             return false;
         }
-        let by_id: std::collections::HashMap<i64, Item> =
-            self.items[from..].iter().map(|i| (i.entry.id, *i)).collect();
+        let by_id: std::collections::HashMap<i64, Item> = self.items[from..]
+            .iter()
+            .map(|i| (i.entry.id, *i))
+            .collect();
         self.items.truncate(from);
         self.items.extend(ids.iter().map(|id| by_id[id]));
         // Fresh positions for everything: one write, no gaps to worry about.
@@ -129,7 +131,10 @@ impl Queue {
             let _ = (|| -> Result<()> {
                 let tx = conn.transaction()?;
                 for (id, pos) in rows {
-                    tx.execute("UPDATE queue_item SET pos = ?2 WHERE id = ?1", params![id, pos])?;
+                    tx.execute(
+                        "UPDATE queue_item SET pos = ?2 WHERE id = ?1",
+                        params![id, pos],
+                    )?;
                 }
                 tx.commit()?;
                 Ok(())

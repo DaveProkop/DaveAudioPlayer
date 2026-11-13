@@ -41,11 +41,7 @@ impl LoudnessMeter {
     }
 
     pub fn finish(&self) -> Loudness {
-        let integrated = self
-            .inner
-            .loudness_global()
-            .ok()
-            .filter(|l| l.is_finite());
+        let integrated = self.inner.loudness_global().ok().filter(|l| l.is_finite());
         let peak = (0..self.channels)
             .filter_map(|c| self.inner.true_peak(c).ok())
             .fold(0.0f64, f64::max);

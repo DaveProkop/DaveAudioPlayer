@@ -7,6 +7,7 @@ import '../src/rust/api/library.dart';
 import '../src/rust/api/player.dart' as rust;
 import 'folder_picker.dart';
 import 'library_pages.dart' show LibraryFuture;
+import 'player.dart' show mixModeDescription, mixModeName;
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -92,35 +93,20 @@ class SettingsPage extends StatelessWidget {
                   title: 'Přehrávání',
                   children: [
                     ListTile(
-                      title: const Text('Crossfade'),
-                      subtitle: const Text('Prolnutí na konci skladby. Navazující skladby alba hrají vždy bez mezery.'),
+                      title: const Text('Režim mixu'),
+                      subtitle: Text(s == null ? '' : mixModeDescription(s.mixMode)),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 16, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Slider(
-                              value: ((s?.crossfadeMs ?? 0) / 1000).clamp(0, 12).toDouble(),
-                              max: 12,
-                              divisions: 12,
-                              label: _xf(s?.crossfadeMs ?? 0),
-                              onChanged: s == null ? null : (v) => rust.setCrossfade(ms: v.round() * 1000),
-                            ),
-                          ),
-                          SizedBox(width: 72, child: Text(_xf(s?.crossfadeMs ?? 0), textAlign: TextAlign.right)),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: SegmentedButton<rust.MixModeDto>(
+                        segments: [
+                          for (final m in rust.MixModeDto.values)
+                            ButtonSegment(value: m, label: Text(mixModeName(m))),
                         ],
+                        selected: {s?.mixMode ?? rust.MixModeDto.party},
+                        showSelectedIcon: false,
+                        onSelectionChanged: s == null ? null : (v) => rust.setMixMode(mode: v.first),
                       ),
-                    ),
-                    SwitchListTile(
-                      title: const Text('Chytré přechody'),
-                      subtitle: const Text(
-                        'Podobné tempo: beatmatch (nástup na dobu, prohození basů). Dvě energické '
-                        'skladby s jiným tempem: střih na dobu. Jinak přechod filtrem, a když nesedí ani '
-                        'tónina, echo na poslední době. Bez změřeného tempa obyčejné prolnutí.',
-                      ),
-                      value: s?.smartTransitions ?? true,
-                      onChanged: s == null || (s.crossfadeMs == 0) ? null : (v) => rust.setSmartTransitions(enabled: v),
                     ),
                     LibraryFuture<LibraryStats>(
                       player: player,
@@ -194,7 +180,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  static String _xf(int ms) => ms == 0 ? 'vypnuto' : '${(ms / 1000).round()} s';
 }
 
 class _Card extends StatelessWidget {

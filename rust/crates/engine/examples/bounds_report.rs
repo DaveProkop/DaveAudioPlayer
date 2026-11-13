@@ -37,7 +37,11 @@ fn print_levels(path: &std::path::Path) {
             acc += frame.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>() / info.channels as f64;
             n += 1;
             if n == block {
-                println!("{:>5} s {:>7.1} dB", t * 5, 10.0 * (acc / n as f64 + 1e-15).log10());
+                println!(
+                    "{:>5} s {:>7.1} dB",
+                    t * 5,
+                    10.0 * (acc / n as f64 + 1e-15).log10()
+                );
                 (acc, n, t) = (0.0, 0, t + 1);
             }
         }
@@ -46,7 +50,9 @@ fn print_levels(path: &std::path::Path) {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let db = args.next().expect("usage: bounds_report <library.db> [max tracks]");
+    let db = args
+        .next()
+        .expect("usage: bounds_report <library.db> [max tracks]");
     if !db.ends_with(".db") {
         print_levels(std::path::Path::new(&db));
         return;

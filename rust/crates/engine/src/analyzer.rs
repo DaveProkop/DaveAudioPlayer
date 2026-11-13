@@ -160,8 +160,7 @@ impl Worker {
                     // retried on every pass; playback treats it as unknown loudness.
                     let m = result.unwrap_or_default();
                     let (key, key_confidence) = m.key.unzip();
-                    let (bpm, bpm_confidence) =
-                        choose_bpm(self.tag_bpm(track_id), m.tempo).unzip();
+                    let (bpm, bpm_confidence) = choose_bpm(self.tag_bpm(track_id), m.tempo).unzip();
                     let ms = |s: f64| (s * 1000.0).round() as i64;
                     let audio_start_ms = m.bounds.map(|b| ms(b.start_s));
                     let audio_end_ms = m.bounds.map(|b| ms(b.end_s));
@@ -298,10 +297,17 @@ fn choose_bpm(tag: Option<f64>, detected: Option<(f64, f64)>) -> Option<(f64, f6
     match (tag, detected) {
         (Some(tag), Some((bpm, conf))) => {
             // Agreeing: the precise detected tempo, in the tag's octave (87 vs 174).
-            if let Some(r) = [1.0, 2.0, 0.5].into_iter().find(|r| (bpm / (tag * r) - 1.0).abs() <= 0.04) {
+            if let Some(r) = [1.0, 2.0, 0.5]
+                .into_iter()
+                .find(|r| (bpm / (tag * r) - 1.0).abs() <= 0.04)
+            {
                 return Some((bpm / r, 1.0));
             }
-            if conf < 0.5 { Some((tag, 1.0)) } else { Some((bpm, conf)) }
+            if conf < 0.5 {
+                Some((tag, 1.0))
+            } else {
+                Some((bpm, conf))
+            }
         }
         (Some(tag), None) => Some((tag, 1.0)),
         (None, d) => d,
@@ -355,10 +361,26 @@ mod tests {
 
     #[test]
     fn bpm_tags_count_only_when_the_detection_agrees() {
-        assert_eq!(choose_bpm(Some(128.0), Some((127.6, 0.9))), Some((127.6, 1.0)), "precise");
-        assert_eq!(choose_bpm(Some(87.0), Some((174.2, 0.9))), Some((87.1, 1.0)), "half time");
-        assert_eq!(choose_bpm(Some(90.0), Some((124.0, 0.9))), Some((124.0, 0.9)), "wrong tag");
-        assert_eq!(choose_bpm(Some(90.0), Some((124.0, 0.2))), Some((90.0, 1.0)), "unsure");
+        assert_eq!(
+            choose_bpm(Some(128.0), Some((127.6, 0.9))),
+            Some((127.6, 1.0)),
+            "precise"
+        );
+        assert_eq!(
+            choose_bpm(Some(87.0), Some((174.2, 0.9))),
+            Some((87.1, 1.0)),
+            "half time"
+        );
+        assert_eq!(
+            choose_bpm(Some(90.0), Some((124.0, 0.9))),
+            Some((124.0, 0.9)),
+            "wrong tag"
+        );
+        assert_eq!(
+            choose_bpm(Some(90.0), Some((124.0, 0.2))),
+            Some((90.0, 1.0)),
+            "unsure"
+        );
         assert_eq!(choose_bpm(Some(90.0), None), Some((90.0, 1.0)));
         assert_eq!(choose_bpm(None, Some((124.0, 0.3))), Some((124.0, 0.3)));
     }

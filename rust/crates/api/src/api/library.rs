@@ -429,14 +429,15 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
 }
 
 /// Smart Mix: an order for the upcoming queue items (`item_ids`, playing `track_ids` in
-/// the same order) where each track mixes well into the next by key, tempo and energy, starting
+/// the same order) where each track mixes well into the next by key, tempo and energy (built
+/// up in the Party mode, wound down in Chill), starting
 /// after `after_track` (the playing one). Returns the item ids in the proposed order.
 pub fn suggest_mix_order(
     after_track: Option<i64>,
     item_ids: Vec<i64>,
     track_ids: Vec<i64>,
 ) -> Result<Vec<i64>> {
-    use dap_analysis::{Camelot, MixTrack, mix_order};
+    use dap_analysis::{Camelot, EnergyTrend, MixTrack, mix_order};
     let info = |c: &Connection, id: i64| -> rusqlite::Result<MixTrack> {
         let row: Option<(Option<String>, Option<f64>, Option<f64>)> = c
             .query_row(
@@ -452,18 +453,31 @@ pub fn suggest_mix_order(
             energy: lufs.map(|l| dap_analysis::track_energy(l, bpm)),
         })
     };
-    let (start, tracks) = with_reader(|c| {
+    let (start, tracks, trend) = with_reader(|c| {
+        // Party builds the energy up, Chill winds it down.
+        let mode: Option<String> = c
+            .query_row(
+                "SELECT value FROM setting WHERE key = 'player.mix_mode'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let trend = match mode.as_deref().and_then(dap_engine::MixMode::from_name) {
+            Some(dap_engine::MixMode::Party) => EnergyTrend::Rising,
+            Some(dap_engine::MixMode::Chill) => EnergyTrend::Falling,
+            _ => EnergyTrend::Steady,
+        };
         let start = after_track.map(|id| info(c, id)).transpose()?;
         let tracks = track_ids
             .iter()
             .map(|&id| info(c, id))
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok((start, tracks))
+        Ok((start, tracks, trend))
     })?;
     if tracks.len() != item_ids.len() {
         return Err(anyhow!("item_ids and track_ids differ in length"));
     }
-    Ok(mix_order(start.as_ref(), &tracks)
+    Ok(mix_order(start.as_ref(), &tracks, trend)
         .into_iter()
         .map(|i| item_ids[i])
         .collect())

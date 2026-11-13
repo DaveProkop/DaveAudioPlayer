@@ -122,6 +122,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TrackInfo> dco_decode_list_track_info(dynamic raw);
 
   @protected
+  MixModeDto dco_decode_mix_mode_dto(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
@@ -314,6 +317,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TrackInfo> sse_decode_list_track_info(SseDeserializer deserializer);
+
+  @protected
+  MixModeDto sse_decode_mix_mode_dto(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -565,6 +571,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<TrackInfo> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_mix_mode_dto(MixModeDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);

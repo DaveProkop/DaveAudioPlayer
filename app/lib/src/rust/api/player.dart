@@ -86,6 +86,10 @@ Future<void> setNormalization({required bool enabled}) =>
 Future<void> setSmartTransitions({required bool enabled}) =>
     RustLib.instance.api.crateApiPlayerSetSmartTransitions(enabled: enabled);
 
+/// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
+Future<void> setMixMode({required MixModeDto mode}) =>
+    RustLib.instance.api.crateApiPlayerSetMixMode(mode: mode);
+
 /// Fixes the transition from track `from_track_id` into `to_track_id` (`None` = automatic
 /// again). It is stored and wins over the settings; a kind the two tracks cannot do (no
 /// analyzed beat grid, too different tempos for a beatmatch) falls back to a crossfade.
@@ -214,10 +218,26 @@ enum AppEventKind {
   analysisProgress,
 }
 
+/// How tracks pass into each other, as a whole profile.
+enum MixModeDto {
+  /// As mastered: gapless, nothing mixed.
+  album,
+
+  /// Plain 6 s crossfades.
+  radio,
+
+  /// All smart transitions; the mix order builds energy up.
+  party,
+
+  /// Long 10 s crossfades, no cuts or echoes; the mix order winds energy down.
+  chill,
+}
+
 enum PlayStatus { stopped, playing, paused }
 
 /// Playback preferences as stored by the engine.
 class PlayerSettingsDto {
+  final MixModeDto mixMode;
   final int crossfadeMs;
   final bool normalize;
   final bool smartTransitions;
@@ -227,6 +247,7 @@ class PlayerSettingsDto {
   final double eqPreampDb;
 
   const PlayerSettingsDto({
+    required this.mixMode,
     required this.crossfadeMs,
     required this.normalize,
     required this.smartTransitions,
@@ -238,6 +259,7 @@ class PlayerSettingsDto {
 
   @override
   int get hashCode =>
+      mixMode.hashCode ^
       crossfadeMs.hashCode ^
       normalize.hashCode ^
       smartTransitions.hashCode ^
@@ -251,6 +273,7 @@ class PlayerSettingsDto {
       identical(this, other) ||
       other is PlayerSettingsDto &&
           runtimeType == other.runtimeType &&
+          mixMode == other.mixMode &&
           crossfadeMs == other.crossfadeMs &&
           normalize == other.normalize &&
           smartTransitions == other.smartTransitions &&

@@ -18,9 +18,29 @@ fn variants() -> Vec<(&'static str, ChromaOptions)> {
     let d = ChromaOptions::default();
     vec![
         ("default", d),
-        ("peaks", ChromaOptions { peaks_only: true, ..d }),
-        ("peaks+no-norm", ChromaOptions { peaks_only: true, normalize_blocks: false, ..d }),
-        ("peaks 55-2093", ChromaOptions { peaks_only: true, min_hz: 55.0, ..d }),
+        (
+            "peaks",
+            ChromaOptions {
+                peaks_only: true,
+                ..d
+            },
+        ),
+        (
+            "peaks+no-norm",
+            ChromaOptions {
+                peaks_only: true,
+                normalize_blocks: false,
+                ..d
+            },
+        ),
+        (
+            "peaks 55-2093",
+            ChromaOptions {
+                peaks_only: true,
+                min_hz: 55.0,
+                ..d
+            },
+        ),
     ]
 }
 
@@ -66,7 +86,8 @@ impl Score {
     }
 
     fn print(&self, name: &str) {
-        let n = (self.exact + self.relative + self.neighbour + self.near + self.wrong).max(1) as f64;
+        let n =
+            (self.exact + self.relative + self.neighbour + self.near + self.wrong).max(1) as f64;
         let p = |x: usize| 100.0 * x as f64 / n;
         println!(
             "{name:24} exact {:5.1} %  relative {:4.1} %  neighbour {:4.1} %  wrong {:4.1} %  mixable {:5.1} %",
@@ -80,7 +101,9 @@ impl Score {
 }
 
 fn main() {
-    let db = std::env::args().nth(1).expect("usage: key_accuracy <library.db>");
+    let db = std::env::args()
+        .nth(1)
+        .expect("usage: key_accuracy <library.db>");
     let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).expect("open db");
     let mut st = conn
         .prepare(

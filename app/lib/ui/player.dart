@@ -40,6 +40,26 @@ class _PositionTickerState extends State<PositionTicker> {
   Widget build(BuildContext context) => widget.builder(context);
 }
 
+/// Short name of a mix mode.
+String mixModeName(rust.MixModeDto mode) => switch (mode) {
+  rust.MixModeDto.album => 'Album',
+  rust.MixModeDto.radio => 'Rádio',
+  rust.MixModeDto.party => 'Párty',
+  rust.MixModeDto.chill => 'Chill',
+};
+
+/// What a mix mode does, in a sentence or two.
+String mixModeDescription(rust.MixModeDto mode) => switch (mode) {
+  rust.MixModeDto.album => 'Skladby hrají, jak byly nahrané: bez mezery, nic se nemíchá.',
+  rust.MixModeDto.radio => 'Prolnutí 6 s, ticho na začátku a konci skladeb se přeskočí.',
+  rust.MixModeDto.party =>
+    'Chytré přechody: beatmatch při podobném tempu, střih na dobu mezi energickými skladbami, '
+        'jinak filtr nebo echo. Řazení fronty stupňuje energii.',
+  rust.MixModeDto.chill =>
+    'Dlouhá prolnutí 10 s, beatmatch a přechody filtrem, žádné střihy ani echo. '
+        'Řazení fronty energii postupně zklidňuje.',
+};
+
 /// Crossfade length that applies at the end of the current track (0 = none).
 int fadeMsAtEnd(PlayerController p) {
   final xf = p.settings?.crossfadeMs ?? 0;
@@ -341,10 +361,14 @@ class PlayerBar extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       StatusPill(
-                        label: (s?.crossfadeMs ?? 0) == 0 ? 'Gapless' : '✕ ${(s!.crossfadeMs / 1000).round()} s',
-                        on: (s?.crossfadeMs ?? 0) > 0,
-                        tooltip: 'Crossfade (nastavení délky v Nastavení)',
-                        onTap: s == null ? null : () => rust.setCrossfade(ms: s.crossfadeMs == 0 ? 6000 : 0),
+                        label: s == null ? 'Mix' : mixModeName(s.mixMode),
+                        on: s != null && s.mixMode != rust.MixModeDto.album,
+                        tooltip: 'Režim mixu (kliknutím další)',
+                        onTap: s == null
+                            ? null
+                            : () => rust.setMixMode(
+                                mode: rust.MixModeDto.values[(s.mixMode.index + 1) % rust.MixModeDto.values.length],
+                              ),
                       ),
                       const SizedBox(width: 6),
                       StatusPill(label: 'EQ', on: s?.eqEnabled ?? false, tooltip: 'Ekvalizér', onTap: onOpenEq),
