@@ -9,6 +9,7 @@ import '../src/rust/api/player.dart' as rust;
 import 'folder_picker.dart';
 import 'library_pages.dart' show LibraryFuture;
 import 'player.dart' show mixModeDescription, mixModeName;
+import 'stats_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -120,6 +121,16 @@ class SettingsPage extends StatelessWidget {
                         ),
                         value: s?.normalize ?? true,
                         onChanged: s == null ? null : (v) => rust.setNormalization(enabled: v),
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Statistiky poslechu'),
+                      subtitle: const Text('Nejhranější skladby, interpreti a žánry, poslech po dnech'),
+                      trailing: const Icon(Icons.insights),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => Scaffold(body: SafeArea(child: StatsPage(player: player))),
+                        ),
                       ),
                     ),
                     ListTile(

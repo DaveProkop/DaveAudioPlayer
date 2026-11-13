@@ -229,6 +229,18 @@ void main() {
     await shot('desktop_playlists');
     await tapText('Na večer');
     await shot('desktop_playlist');
+    await tester.runAsync(() async {
+      await createSmartPlaylist(
+        name: 'Rychlé',
+        rulesJson: '{"match_all": true, "rules": [{"field": "bpm", "op": "at_least", "value": "140"}], "order": "library", "limit": 0}',
+      );
+    });
+    player.libraryEdited();
+    await tapText('Playlisty');
+    await tapText('Rychlé');
+    await shot('desktop_smart_playlist');
+    await tapText('Statistiky');
+    await shot('desktop_stats');
 
     // Smart Mix: the whole library in the queue, then the proposed order.
     await tester.runAsync(() async {

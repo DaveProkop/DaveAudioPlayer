@@ -1187,3 +1187,32 @@ fn switching_the_output_device_keeps_playing() {
     }
     engine.shutdown();
 }
+
+#[test]
+fn next_early_in_a_track_counts_as_a_skip() {
+    let dir = TempDir::new("skip");
+    write_wav(&dir.music().join("a.wav"), 1, 8 * RATE);
+    write_wav(&dir.music().join("b.wav"), 2, 8 * RATE);
+    let id = scan(&dir);
+    let engine = start(&dir, None);
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    wait_for(&engine, |e| matches!(e, Event::State(s) if s.status == Status::Playing));
+    std::thread::sleep(Duration::from_millis(100));
+    engine.send(Command::Next);
+    wait_for(&engine, |e| matches!(e, Event::State(s) if s.index == Some(1)));
+    engine.shutdown();
+    let conn = open_writer(&dir.db()).unwrap();
+    let (skips, history): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT skip_count FROM track WHERE id = ?1),
+                    (SELECT count(*) FROM play_history WHERE track_id = ?1 AND skipped = 1)",
+            [id("a.wav")],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((skips, history), (1, 1));
+}

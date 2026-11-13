@@ -5,6 +5,7 @@ import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import '../src/rust/api/playlists.dart';
 import 'library_pages.dart' show LibraryFuture, openAlbum;
+import 'smart_playlist.dart';
 import 'widgets.dart';
 
 void openPlaylist(BuildContext context, PlayerController player, int playlistId) {
@@ -43,6 +44,14 @@ Future<void> saveAsPlaylist(BuildContext context, PlayerController player, List<
   player.messages.add('Playlist „$name“ uložen');
 }
 
+/// Creates a smart playlist with the rules editor.
+Future<void> newSmartPlaylist(BuildContext context, PlayerController player) async {
+  final result = await showSmartPlaylistEditor(context);
+  if (result == null) return;
+  await createSmartPlaylist(name: result.$1, rulesJson: result.$2);
+  player.libraryEdited();
+}
+
 /// Lets the user pick a playlist (or create one) and adds `tracks` to it.
 Future<void> showAddToPlaylist(BuildContext context, PlayerController player, List<TrackInfo> tracks) async {
   if (tracks.isEmpty) return;
@@ -58,7 +67,7 @@ Future<void> showAddToPlaylist(BuildContext context, PlayerController player, Li
           onPressed: () => Navigator.of(dialog).pop(-1),
           child: const ListTile(leading: Icon(Icons.add), title: Text('Nový playlist…')),
         ),
-        for (final p in list)
+        for (final p in list.where((p) => p.smartRules == null))
           SimpleDialogOption(
             onPressed: () => Navigator.of(dialog).pop(p.id),
             child: ListTile(
@@ -107,10 +116,14 @@ class PlaylistsPage extends StatelessWidget {
                   PageHeader(
                     title: 'Playlisty',
                     subtitle: plural(list.length, 'playlist', 'playlisty', 'playlistů'),
-                    trailing: FilledButton.tonalIcon(
-                      onPressed: () => saveAsPlaylist(context, player, const []),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Nový'),
+                    trailing: PopupMenuButton<bool>(
+                      tooltip: 'Nový playlist',
+                      onSelected: (smart) => smart ? newSmartPlaylist(context, player) : saveAsPlaylist(context, player, const []),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: false, child: Text('Playlist')),
+                        PopupMenuItem(value: true, child: Text('Chytrý playlist (podle pravidel)')),
+                      ],
+                      child: const Chip(avatar: Icon(Icons.add, size: 18), label: Text('Nový')),
                     ),
                   ),
                 ],
@@ -178,6 +191,15 @@ class PlaylistPage extends StatelessWidget {
   final int playlistId;
 
   Future<void> _rename(BuildContext context, PlaylistInfo info) async {
+    final rules = info.smartRules;
+    if (rules != null) {
+      final result = await showSmartPlaylistEditor(context, name: info.name, rulesJson: rules);
+      if (result == null) return;
+      await renamePlaylist(playlistId: playlistId, name: result.$1);
+      await setSmartRules(playlistId: playlistId, rulesJson: result.$2);
+      player.libraryEdited();
+      return;
+    }
     final name = await promptPlaylistName(context, initial: info.name, title: 'Přejmenovat playlist');
     if (name == null) return;
     await renamePlaylist(playlistId: playlistId, name: name);
@@ -249,7 +271,7 @@ class PlaylistPage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'PLAYLIST',
+                            info.smartRules == null ? 'PLAYLIST' : 'CHYTRÝ PLAYLIST',
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                               letterSpacing: .8,
@@ -283,9 +305,9 @@ class PlaylistPage extends StatelessWidget {
                       label: const Text('Do fronty'),
                     ),
                     IconButton(
-                      tooltip: 'Přejmenovat',
+                      tooltip: info.smartRules == null ? 'Přejmenovat' : 'Upravit pravidla',
                       onPressed: () => _rename(context, info),
-                      icon: const Icon(Icons.edit_outlined),
+                      icon: Icon(info.smartRules == null ? Icons.edit_outlined : Icons.tune),
                     ),
                     IconButton(
                       tooltip: 'Smazat playlist',
@@ -302,7 +324,20 @@ class PlaylistPage extends StatelessWidget {
             builder: (context, _) => CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(child: header),
-                if (entries.isEmpty)
+                if (entries.isNotEmpty && info.smartRules != null)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                    sliver: SliverList.builder(
+                      itemCount: entries.length,
+                      itemBuilder: (context, i) => TrackRow(
+                        track: entries[i].track,
+                        player: player,
+                        onTap: () => player.playAll(tracks, start: i),
+                        openAlbum: (id) => openAlbum(context, player, id),
+                      ),
+                    ),
+                  )
+                else if (entries.isEmpty)
                   const SliverFillRemaining(
                     hasScrollBody: false,
                     child: EmptyState(

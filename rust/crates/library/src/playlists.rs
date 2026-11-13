@@ -19,6 +19,8 @@ pub struct PlaylistSummary {
     pub name: String,
     pub track_count: u32,
     pub duration_ms: i64,
+    /// Rules (JSON) of a smart playlist; its counts above are 0, see [`crate::smart`].
+    pub rules: Option<String>,
 }
 
 /// One entry of a playlist (the same track may appear more than once).
@@ -39,6 +41,27 @@ pub fn create(conn: &Connection, name: &str) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
+/// Creates a smart playlist from rules (JSON, [`crate::smart::SmartRules`]).
+pub fn create_smart(conn: &Connection, name: &str, rules: &str) -> Result<i64> {
+    crate::smart::SmartRules::from_json(rules)?;
+    let id = create(conn, name)?;
+    conn.execute(
+        "UPDATE playlist SET kind = 'smart', rules = ?2 WHERE id = ?1",
+        params![id, rules],
+    )?;
+    Ok(id)
+}
+
+/// Replaces the rules of a smart playlist.
+pub fn set_rules(conn: &Connection, id: i64, rules: &str) -> Result<()> {
+    crate::smart::SmartRules::from_json(rules)?;
+    conn.execute(
+        "UPDATE playlist SET rules = ?2, updated_at = ?3 WHERE id = ?1 AND kind = 'smart'",
+        params![id, rules, now_ms()],
+    )?;
+    Ok(())
+}
+
 pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<()> {
     conn.execute(
         "UPDATE playlist SET name = ?2, updated_at = ?3 WHERE id = ?1",
@@ -56,7 +79,8 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
 /// All playlists in their list order.
 pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>> {
     let mut st = conn.prepare_cached(
-        "SELECT p.id, p.name, count(f.id), coalesce(sum(f.duration_ms), 0)
+        "SELECT p.id, p.name, count(f.id), coalesce(sum(f.duration_ms), 0),
+                CASE WHEN p.kind = 'smart' THEN p.rules END
          FROM playlist p
          LEFT JOIN playlist_item i ON i.playlist_id = p.id
          LEFT JOIN track t ON t.id = i.track_id
@@ -70,6 +94,7 @@ pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>> {
             name: r.get(1)?,
             track_count: r.get(2)?,
             duration_ms: r.get(3)?,
+            rules: r.get(4)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

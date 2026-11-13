@@ -1680,6 +1680,32 @@ impl Control {
         });
     }
 
+    /// Next in the first half of a track counts as skipping it (statistics, smart
+    /// playlists).
+    fn record_skip(&self) {
+        let Some(current) = &self.current else {
+            return;
+        };
+        let (played, length) = (self.position_ms() as i64, current.duration_ms.unwrap_or(0) as i64);
+        if self.status != Status::Playing || played <= 0 || played * 2 >= length {
+            return;
+        }
+        let track_id = current.entry.track_id;
+        let device = if cfg!(target_os = "android") { "android" } else { "pc" };
+        self.db.run(move |c| {
+            let now = now_ms();
+            let _ = c.execute(
+                "UPDATE track SET skip_count = skip_count + 1 WHERE id = ?1",
+                [track_id],
+            );
+            let _ = c.execute(
+                "INSERT INTO play_history (track_id, started_at, played_ms, completed, skipped, device)
+                 VALUES (?1, ?2, ?3, 0, 1, ?4)",
+                params![track_id, now - played, played, device],
+            );
+        });
+    }
+
     fn record_play(&self, loaded: &Loaded) {
         let track_id = loaded.entry.track_id;
         let played = loaded.duration_ms.unwrap_or(0) as i64;
@@ -1717,6 +1743,7 @@ impl Control {
             }
             Command::Next => match self.cursor_index() {
                 Some(i) if i + 1 < self.queue.len() => {
+                    self.record_skip();
                     self.play_index(i + 1, 0, self.status == Status::Playing)
                 }
                 _ => {

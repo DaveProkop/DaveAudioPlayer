@@ -96,6 +96,12 @@ class PlayerController extends ChangeNotifier {
     return prev.albumId == next.albumId && a != null && b != null && b == a + 1;
   }
 
+  /// Loads a track's details again (after a rating or an edit).
+  void forgetDetails(int trackId) {
+    _details.remove(trackId);
+    notifyListeners();
+  }
+
   /// Technical details of a track (format, loudness), loaded on demand.
   TrackDetails? details(int trackId) {
     if (!_details.containsKey(trackId)) {

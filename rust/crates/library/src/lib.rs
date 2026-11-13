@@ -7,6 +7,7 @@ pub mod playlists;
 pub mod roots;
 pub mod scanner;
 pub mod search;
+pub mod smart;
 
 pub use db::{DbError, SCHEMA_VERSION};
 pub use roots::{add_root, remove_root, repair_overlapping_roots};

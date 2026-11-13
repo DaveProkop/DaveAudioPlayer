@@ -253,6 +253,10 @@ class TrackDetails {
   /// Energy 0–1, from loudness and tempo (once the loudness is measured).
   final double? energy;
 
+  /// 0–5 stars (0 = not rated).
+  final int rating;
+  final int playCount;
+
   const TrackDetails({
     required this.format,
     this.sampleRate,
@@ -265,6 +269,8 @@ class TrackDetails {
     this.bpm,
     required this.bpmFromTag,
     this.energy,
+    required this.rating,
+    required this.playCount,
   });
 
   @override
@@ -279,7 +285,9 @@ class TrackDetails {
       keyFromTag.hashCode ^
       bpm.hashCode ^
       bpmFromTag.hashCode ^
-      energy.hashCode;
+      energy.hashCode ^
+      rating.hashCode ^
+      playCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -296,7 +304,9 @@ class TrackDetails {
           keyFromTag == other.keyFromTag &&
           bpm == other.bpm &&
           bpmFromTag == other.bpmFromTag &&
-          energy == other.energy;
+          energy == other.energy &&
+          rating == other.rating &&
+          playCount == other.playCount;
 }
 
 class TrackInfo {

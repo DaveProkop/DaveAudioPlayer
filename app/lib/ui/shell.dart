@@ -9,9 +9,10 @@ import 'player.dart';
 import 'playlists.dart';
 import 'queue.dart';
 import 'settings_page.dart';
+import 'stats_page.dart';
 import 'theme.dart';
 
-enum Section { tracks, albums, artists, playlists, nowPlaying, eq, settings }
+enum Section { tracks, albums, artists, playlists, stats, nowPlaying, eq, settings }
 
 /// Width from which the desktop layout (side navigation + player bar) is used.
 const desktopBreakpoint = 900.0;
@@ -84,6 +85,7 @@ class _AppShellState extends State<AppShell> {
     Section.albums => AlbumsPage(player: player),
     Section.artists => ArtistsPage(player: player),
     Section.playlists => PlaylistsPage(player: player),
+    Section.stats => StatsPage(player: player),
     Section.nowPlaying => NowPlayingView(player: player),
     Section.eq => EqPage(player: player),
     Section.settings => SettingsPage(player: player, prefs: widget.prefs, onOpenEq: () => _select(Section.eq)),
@@ -371,6 +373,7 @@ class _SideNav extends StatelessWidget {
           item(Section.albums, Icons.album_outlined, 'Alba'),
           item(Section.artists, Icons.person_outline, 'Interpreti'),
           item(Section.playlists, Icons.queue_music, 'Playlisty'),
+          item(Section.stats, Icons.insights, 'Statistiky'),
           const Padding(padding: EdgeInsets.symmetric(vertical: 10, horizontal: 6), child: Divider()),
           item(Section.nowPlaying, Icons.play_circle_outline, 'Právě hraje'),
           item(Section.eq, Icons.equalizer, 'Ekvalizér'),

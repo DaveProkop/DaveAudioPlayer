@@ -7,6 +7,7 @@ import 'api/library.dart';
 import 'api/metadata.dart';
 import 'api/player.dart';
 import 'api/playlists.dart';
+import 'api/stats.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -139,13 +140,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
 
   @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<QueueItemDto> dco_decode_list_queue_item_dto(dynamic raw);
 
   @protected
+  List<RecentPlay> dco_decode_list_recent_play(dynamic raw);
+
+  @protected
+  List<TopItem> dco_decode_list_top_item(dynamic raw);
+
+  @protected
+  List<TopTrack> dco_decode_list_top_track(dynamic raw);
+
+  @protected
   List<TrackInfo> dco_decode_list_track_info(dynamic raw);
+
+  @protected
+  ListenStats dco_decode_listen_stats(dynamic raw);
 
   @protected
   LyricLine dco_decode_lyric_line(dynamic raw);
@@ -227,7 +243,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   QueueItemDto dco_decode_queue_item_dto(dynamic raw);
 
   @protected
+  RecentPlay dco_decode_recent_play(dynamic raw);
+
+  @protected
   ScanSummaryDto dco_decode_scan_summary_dto(dynamic raw);
+
+  @protected
+  TopItem dco_decode_top_item(dynamic raw);
+
+  @protected
+  TopTrack dco_decode_top_track(dynamic raw);
 
   @protected
   TrackDetails dco_decode_track_details(dynamic raw);
@@ -388,6 +413,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
 
   @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -396,7 +424,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<RecentPlay> sse_decode_list_recent_play(SseDeserializer deserializer);
+
+  @protected
+  List<TopItem> sse_decode_list_top_item(SseDeserializer deserializer);
+
+  @protected
+  List<TopTrack> sse_decode_list_top_track(SseDeserializer deserializer);
+
+  @protected
   List<TrackInfo> sse_decode_list_track_info(SseDeserializer deserializer);
+
+  @protected
+  ListenStats sse_decode_listen_stats(SseDeserializer deserializer);
 
   @protected
   LyricLine sse_decode_lyric_line(SseDeserializer deserializer);
@@ -496,7 +536,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   QueueItemDto sse_decode_queue_item_dto(SseDeserializer deserializer);
 
   @protected
+  RecentPlay sse_decode_recent_play(SseDeserializer deserializer);
+
+  @protected
   ScanSummaryDto sse_decode_scan_summary_dto(SseDeserializer deserializer);
+
+  @protected
+  TopItem sse_decode_top_item(SseDeserializer deserializer);
+
+  @protected
+  TopTrack sse_decode_top_track(SseDeserializer deserializer);
 
   @protected
   TrackDetails sse_decode_track_details(SseDeserializer deserializer);
@@ -702,6 +751,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -714,10 +769,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_recent_play(
+    List<RecentPlay> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_top_item(List<TopItem> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_top_track(List<TopTrack> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_track_info(
     List<TrackInfo> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_listen_stats(ListenStats self, SseSerializer serializer);
 
   @protected
   void sse_encode_lyric_line(LyricLine self, SseSerializer serializer);
@@ -834,10 +904,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_queue_item_dto(QueueItemDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_recent_play(RecentPlay self, SseSerializer serializer);
+
+  @protected
   void sse_encode_scan_summary_dto(
     ScanSummaryDto self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_top_item(TopItem self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_top_track(TopTrack self, SseSerializer serializer);
 
   @protected
   void sse_encode_track_details(TrackDetails self, SseSerializer serializer);

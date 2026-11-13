@@ -85,6 +85,9 @@ pub struct TrackDetails {
     pub bpm_from_tag: bool,
     /// Energy 0–1, from loudness and tempo (once the loudness is measured).
     pub energy: Option<f64>,
+    /// 0–5 stars (0 = not rated).
+    pub rating: u8,
+    pub play_count: u32,
 }
 
 /// Closes the read connection (on engine stop, so the database file is released).
@@ -401,7 +404,8 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
         c.query_row(
             "SELECT f.format, f.sample_rate, f.bit_depth, f.bitrate, t.year, a.loudness_lufs,
                     a.key_camelot, coalesce(a.key_confidence, 0) >= 1.0,
-                    a.bpm, coalesce(a.bpm_confidence, 0) >= 1.0
+                    a.bpm, coalesce(a.bpm_confidence, 0) >= 1.0,
+                    coalesce(t.rating, 0) / 2, t.play_count
              FROM track t JOIN file f ON f.id = t.file_id
              LEFT JOIN analysis a ON a.track_id = t.id
              WHERE t.id = ?1",
@@ -411,6 +415,8 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
                 let bpm: Option<f64> = r.get(8)?;
                 Ok(TrackDetails {
                     energy: lufs.map(|l| dap_analysis::track_energy(l, bpm)),
+                    rating: r.get(10)?,
+                    play_count: r.get(11)?,
                     format: r.get(0)?,
                     sample_rate: r.get(1)?,
                     bit_depth: r.get(2)?,

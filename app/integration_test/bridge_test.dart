@@ -11,6 +11,7 @@ import 'package:daveaudioplayer/src/rust/api/library.dart';
 import 'package:daveaudioplayer/src/rust/api/metadata.dart';
 import 'package:daveaudioplayer/src/rust/api/player.dart';
 import 'package:daveaudioplayer/src/rust/api/playlists.dart';
+import 'package:daveaudioplayer/src/rust/api/stats.dart';
 import 'package:daveaudioplayer/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Int64List;
 import 'package:flutter_test/flutter_test.dart';
@@ -146,6 +147,20 @@ void main() {
       expect(lists.map((p) => (p.name, p.trackCount)), [('Jiný', 1)]);
       await deletePlaylist(playlistId: pl);
       expect(await playlists(), isEmpty);
+
+      step('rating and smart playlist');
+      await setRating(trackId: tone, stars: 4);
+      expect((await trackDetails(trackId: tone))!.rating, 4);
+      const rules = '{"match_all": true, "rules": [{"field": "rating", "op": "at_least", "value": "4"}], "order": "rating", "limit": 0}';
+      expect(await smartPreviewCount(rulesJson: rules), 1);
+      final smart = await createSmartPlaylist(name: 'Oblíbené', rulesJson: rules);
+      final smartList = (await playlists()).single;
+      expect((smartList.name, smartList.trackCount, smartList.smartRules != null), ('Oblíbené', 1, true));
+      expect((await playlistTracks(playlistId: smart)).single.track.id, tone);
+      await setRating(trackId: tone, stars: 0);
+      expect(await playlistTracks(playlistId: smart), isEmpty, reason: 'evaluated anew');
+      await deletePlaylist(playlistId: smart);
+      expect((await listenStats(days: 30)).plays, 0);
       final t = hits.single;
       for (final cover in [t.coverSmall, t.coverMedium, t.coverLarge]) {
         expect(cover, isNotNull);

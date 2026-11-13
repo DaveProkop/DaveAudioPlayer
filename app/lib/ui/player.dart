@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../player_controller.dart';
 import '../src/rust/api/library.dart';
 import '../src/rust/api/metadata.dart';
+import '../src/rust/api/stats.dart' show setRating;
 import '../src/rust/api/player.dart' as rust;
 import 'theme.dart';
 import 'widgets.dart';
@@ -540,7 +541,9 @@ class NowPlayingView extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            _RatingStars(player: player, trackId: t.id, stars: details?.rating ?? 0),
+            const SizedBox(height: 8),
             SeekBar(player: player, compact: true),
             const SizedBox(height: 8),
             Center(child: TransportButtons(player: player, large: true)),
@@ -866,6 +869,38 @@ class _LyricsCardState extends State<LyricsCard> {
           style: TextStyle(fontSize: 15, height: 1.4, color: scheme.onSurfaceVariant),
         ),
       ),
+    );
+  }
+}
+
+/// 0–5 stars; tapping the current rating clears it.
+class _RatingStars extends StatelessWidget {
+  const _RatingStars({required this.player, required this.trackId, required this.stars});
+
+  final PlayerController player;
+  final int trackId;
+  final int stars;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: i == stars ? 'Zrušit hodnocení' : 'Hodnotit $i/5',
+            onPressed: () async {
+              await setRating(trackId: trackId, stars: i == stars ? 0 : i);
+              player.forgetDetails(trackId);
+            },
+            icon: Icon(
+              i <= stars ? Icons.star_rounded : Icons.star_outline_rounded,
+              color: i <= stars ? scheme.primary : scheme.outline,
+            ),
+          ),
+      ],
     );
   }
 }

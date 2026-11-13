@@ -13,7 +13,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<List<PlaylistInfo>> playlists() =>
     RustLib.instance.api.crateApiPlaylistsPlaylists();
 
-/// The tracks of a playlist in order (files that disappeared are left out).
+/// The tracks of a playlist in order (files that disappeared are left out). A smart
+/// playlist is evaluated now; its entries have item id 0 (they cannot be moved).
 Future<List<PlaylistTrack>> playlistTracks({
   required PlatformInt64 playlistId,
 }) => RustLib.instance.api.crateApiPlaylistsPlaylistTracks(
@@ -28,6 +29,30 @@ Future<PlatformInt64> createPlaylist({
   name: name,
   trackIds: trackIds,
 );
+
+/// Creates a smart playlist from rules (JSON: `match_all`, `rules` of `field`/`op`/`value`,
+/// `order`, `limit`); returns its id.
+Future<PlatformInt64> createSmartPlaylist({
+  required String name,
+  required String rulesJson,
+}) => RustLib.instance.api.crateApiPlaylistsCreateSmartPlaylist(
+  name: name,
+  rulesJson: rulesJson,
+);
+
+Future<void> setSmartRules({
+  required PlatformInt64 playlistId,
+  required String rulesJson,
+}) => RustLib.instance.api.crateApiPlaylistsSetSmartRules(
+  playlistId: playlistId,
+  rulesJson: rulesJson,
+);
+
+/// How many tracks rules select now (for the editor).
+Future<int> smartPreviewCount({required String rulesJson}) => RustLib
+    .instance
+    .api
+    .crateApiPlaylistsSmartPreviewCount(rulesJson: rulesJson);
 
 Future<void> renamePlaylist({
   required PlatformInt64 playlistId,
@@ -72,12 +97,16 @@ class PlaylistInfo {
   final PlatformInt64 durationMs;
   final String? coverMedium;
 
+  /// Rules (JSON) of a smart playlist; `None` for a manual one.
+  final String? smartRules;
+
   const PlaylistInfo({
     required this.id,
     required this.name,
     required this.trackCount,
     required this.durationMs,
     this.coverMedium,
+    this.smartRules,
   });
 
   @override
@@ -86,7 +115,8 @@ class PlaylistInfo {
       name.hashCode ^
       trackCount.hashCode ^
       durationMs.hashCode ^
-      coverMedium.hashCode;
+      coverMedium.hashCode ^
+      smartRules.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -97,7 +127,8 @@ class PlaylistInfo {
           name == other.name &&
           trackCount == other.trackCount &&
           durationMs == other.durationMs &&
-          coverMedium == other.coverMedium;
+          coverMedium == other.coverMedium &&
+          smartRules == other.smartRules;
 }
 
 /// One entry of a playlist; `item_id` identifies it for moving and removing (a track may
