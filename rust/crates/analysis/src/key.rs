@@ -137,11 +137,46 @@ pub fn parse_key_tag(tag: &str) -> Option<Camelot> {
 
 // ----- detection -----------------------------------------------------------------------
 
-/// Key profiles (Temperley / KeyFinder style weights), index 0 = tonic.
-const MAJOR_PROFILE: [f64; 12] = [7.24, 3.50, 3.58, 2.85, 5.82, 4.56, 2.45, 6.99, 3.34, 4.56, 4.07, 4.46];
+/// Major and minor key profiles: expected weight of each pitch class, index 0 = tonic.
+#[derive(Debug, Clone, Copy)]
+pub struct KeyProfiles {
+    pub name: &'static str,
+    pub major: [f64; 12],
+    pub minor: [f64; 12],
+}
+
 // 3.14 is a profile weight, not an approximation of pi.
 #[allow(clippy::approx_constant)]
-const MINOR_PROFILE: [f64; 12] = [7.00, 3.14, 4.36, 5.40, 3.67, 4.09, 3.91, 6.20, 3.63, 2.87, 5.35, 3.83];
+pub const TEMPERLEY: KeyProfiles = KeyProfiles {
+    name: "temperley",
+    major: [7.24, 3.50, 3.58, 2.85, 5.82, 4.56, 2.45, 6.99, 3.34, 4.56, 4.07, 4.46],
+    minor: [7.00, 3.14, 4.36, 5.40, 3.67, 4.09, 3.91, 6.20, 3.63, 2.87, 5.35, 3.83],
+};
+
+pub const KRUMHANSL: KeyProfiles = KeyProfiles {
+    name: "krumhansl",
+    major: [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
+    minor: [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+};
+
+/// KeyFinder (Ibrahim Sha'ath).
+pub const SHAATH: KeyProfiles = KeyProfiles {
+    name: "shaath",
+    major: [6.6, 2.0, 3.5, 2.3, 4.6, 4.0, 2.5, 5.2, 2.4, 3.7, 2.3, 3.4],
+    minor: [6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 5.2, 4.0, 2.7, 4.3, 3.2],
+};
+
+/// Electronic dance music (Faraldo et al., "edma").
+pub const EDMA: KeyProfiles = KeyProfiles {
+    name: "edma",
+    major: [0.1652, 0.0475, 0.0829, 0.0669, 0.0999, 0.0927, 0.0529, 0.1316, 0.0522, 0.0744, 0.0553, 0.0784],
+    minor: [0.1724, 0.0400, 0.0761, 0.1211, 0.0575, 0.0854, 0.0436, 0.1151, 0.0601, 0.0592, 0.0726, 0.0632],
+};
+
+pub const ALL_PROFILES: [KeyProfiles; 4] = [TEMPERLEY, KRUMHANSL, SHAATH, EDMA];
+
+/// The profiles used by the app.
+pub const DEFAULT_PROFILES: KeyProfiles = TEMPERLEY;
 
 fn correlation(a: &[f64; 12], b: &[f64; 12]) -> f64 {
     let ma = a.iter().sum::<f64>() / 12.0;
@@ -159,13 +194,18 @@ fn correlation(a: &[f64; 12], b: &[f64; 12]) -> f64 {
 /// The best matching key for a chroma vector (energy per pitch class, C = 0), with a
 /// confidence 0–1 (how clearly it beats the runner-up). `None` for silence.
 pub fn key_from_chroma(chroma: &[f64; 12]) -> Option<(Key, f64)> {
+    key_from_chroma_with(chroma, &DEFAULT_PROFILES)
+}
+
+/// [`key_from_chroma`] with given profiles.
+pub fn key_from_chroma_with(chroma: &[f64; 12], profiles: &KeyProfiles) -> Option<(Key, f64)> {
     if chroma.iter().all(|&c| c <= 0.0) {
         return None;
     }
     let mut scores: Vec<(Key, f64)> = Vec::with_capacity(24);
     for tonic in 0..12u8 {
         for minor in [false, true] {
-            let profile = if minor { &MINOR_PROFILE } else { &MAJOR_PROFILE };
+            let profile = if minor { &profiles.minor } else { &profiles.major };
             let mut rotated = [0.0; 12];
             for (i, r) in rotated.iter_mut().enumerate() {
                 *r = profile[(i + 12 - tonic as usize) % 12];

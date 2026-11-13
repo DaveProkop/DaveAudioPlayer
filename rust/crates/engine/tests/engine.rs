@@ -681,7 +681,7 @@ fn analysis_detects_keys_but_keeps_keys_from_tags() {
     let deadline = Instant::now() + Duration::from_secs(20);
     while ![key_of("tagged.wav"), key_of("plain.wav")]
         .iter()
-        .all(|k| k.as_ref().is_some_and(|(_, v)| *v >= 2))
+        .all(|k| k.as_ref().is_some_and(|(_, v)| *v >= dap_engine::analyzer::ANALYSIS_ALGO))
     {
         assert!(Instant::now() < deadline, "analysis did not finish");
         std::thread::sleep(Duration::from_millis(50));

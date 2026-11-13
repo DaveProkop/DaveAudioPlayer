@@ -45,10 +45,14 @@ Crossfade 0–12 s (výchozí 6 s), jen při automatickém přechodu, ne při ru
 `analysis.key_camelot` + `key_confidence`. Sken zapíše tóninu z tagu (TKEY / INITIALKEY:
 Camelot, Open Key i názvy jako „F#m“) s jistotou 1,0 a `algo_version` 0. Analyzátor
 (`ANALYSIS_ALGO` 2) při jednom dekódování změří hlasitost i chromagram (FFT 16 384, C2–C7,
-každý blok normalizovaný) a tóninu odhadne korelací s profily dur/moll; odhad má jistotu
+jen spektrální vrcholy, každý blok normalizovaný) a tóninu odhadne korelací s profily dur/moll
+(Temperley); odhad má jistotu
 ≤ 0,99 a tóninu z tagu nepřepíše. Kořeny naskenované dřív si tóniny z tagů načtou jednou
 (stejný mechanismus jako obaly, `scan.covers_version` = 2). UI ukazuje Camelot štítky;
 kompatibilní tónina = stejné číslo, ±1 se stejným písmenem, nebo stejné číslo A↔B.
+Přesnost proti tóninám z tagů (266 skladeb, `cargo run --release -p dap-engine --example
+key_accuracy -- <db>`): přesně 67,7 %, smíchatelně (přesně, paralelní, soused) 85,3 %.
+Profily Krumhansl / Shaath / EDMA a logaritmická komprese vyšly hůř.
 
 ## Vyrovnání hlasitosti
 Vlákno `analysis` (engine) dekóduje skladby a ukládá EBU R128 integrovanou hlasitost a true

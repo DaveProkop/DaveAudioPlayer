@@ -22,8 +22,9 @@ use crate::db_writer::DbWriter;
 
 /// Rows from this version on hold a valid loudness measurement.
 pub const LOUDNESS_ALGO: i64 = 1;
-/// Bumped when the analysis changes; older rows are analyzed again. 2: adds the key.
-pub const ANALYSIS_ALGO: i64 = 2;
+/// Bumped when the analysis changes; older rows are analyzed again. 2: adds the key,
+/// 3: key from spectral peaks only.
+pub const ANALYSIS_ALGO: i64 = 3;
 /// Detected keys stay below the confidence that marks a key from tags.
 const MAX_DETECTED_KEY_CONFIDENCE: f64 = 0.99;
 /// How often an idle analyzer looks for new tracks (after a scan, for example).

@@ -13,8 +13,36 @@ const FFT_SIZE: usize = 16_384;
 const MIN_HZ: f64 = 65.4; // C2
 const MAX_HZ: f64 = 2_093.0; // C7
 
+/// How the chroma is computed (the defaults are what the app uses).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChromaOptions {
+    pub min_hz: f64,
+    pub max_hz: f64,
+    /// Only spectral peaks count (drums and noise spread energy over all bins).
+    pub peaks_only: bool,
+    /// Compress magnitudes logarithmically, so a few loud notes do not dominate.
+    pub log_magnitude: bool,
+    /// Every block weighs the same (else loud passages count more).
+    pub normalize_blocks: bool,
+}
+
+impl Default for ChromaOptions {
+    fn default() -> Self {
+        Self {
+            min_hz: MIN_HZ,
+            max_hz: MAX_HZ,
+            // Measured on 266 tracks with keys in their tags: exact 63.9 % -> 67.7 %,
+            // mixable 82.7 % -> 85.3 % (examples/key_accuracy in dap-engine).
+            peaks_only: true,
+            log_magnitude: false,
+            normalize_blocks: true,
+        }
+    }
+}
+
 /// Feeds interleaved audio, gives the most likely key of the whole track.
 pub struct KeyDetector {
+    options: ChromaOptions,
     channels: usize,
     fft: Arc<dyn RealToComplex<f32>>,
     window: Vec<f32>,
@@ -29,6 +57,10 @@ pub struct KeyDetector {
 
 impl KeyDetector {
     pub fn new(sample_rate: u32, channels: usize) -> Self {
+        Self::with_options(sample_rate, channels, ChromaOptions::default())
+    }
+
+    pub fn with_options(sample_rate: u32, channels: usize, options: ChromaOptions) -> Self {
         let fft = RealFftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE);
         let window = (0..FFT_SIZE)
             .map(|i| {
@@ -40,7 +72,7 @@ impl KeyDetector {
         let bins = (1..FFT_SIZE / 2)
             .filter_map(|k| {
                 let f = k as f64 * rate / FFT_SIZE as f64;
-                if !(MIN_HZ..=MAX_HZ).contains(&f) {
+                if !(options.min_hz..=options.max_hz).contains(&f) {
                     return None;
                 }
                 let midi = 69.0 + 12.0 * (f / 440.0).log2();
@@ -51,6 +83,7 @@ impl KeyDetector {
             })
             .collect();
         Self {
+            options,
             channels: channels.max(1),
             spectrum: fft.make_output_vec(),
             scratch: fft.make_scratch_vec(),
@@ -86,16 +119,23 @@ impl KeyDetector {
         {
             return;
         }
+        let o = self.options;
         let mut block = [0.0f64; 12];
         for &(k, pc, w) in &self.bins {
-            block[pc] += f64::from(self.spectrum[k].norm() * w);
+            let m = self.spectrum[k].norm();
+            if o.peaks_only && (m <= self.spectrum[k - 1].norm() || m < self.spectrum[k + 1].norm()) {
+                continue;
+            }
+            let v = if o.log_magnitude { (1.0 + f64::from(m)).ln() } else { f64::from(m) };
+            block[pc] += v * f64::from(w);
         }
         // Each block counts the same, so loud passages do not decide alone; near-silence
         // is skipped.
         let total: f64 = block.iter().sum();
         if total > 1e-3 {
+            let scale = if o.normalize_blocks { total } else { 1.0 };
             for (c, b) in self.chroma.iter_mut().zip(block) {
-                *c += b / total;
+                *c += b / scale;
             }
         }
     }
@@ -103,6 +143,11 @@ impl KeyDetector {
     /// The most likely key and a confidence 0–1; `None` for silence or very short audio.
     pub fn finish(&self) -> Option<(Key, f64)> {
         key_from_chroma(&self.chroma)
+    }
+
+    /// The accumulated chroma (energy per pitch class, C = 0), for tuning and tools.
+    pub fn chroma(&self) -> [f64; 12] {
+        self.chroma
     }
 }
 
