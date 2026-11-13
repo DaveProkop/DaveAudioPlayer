@@ -386,6 +386,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dap-stretch"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "dap-tags"
 version = "0.1.0"
 dependencies = [
