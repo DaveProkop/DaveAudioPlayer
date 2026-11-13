@@ -10,5 +10,5 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-dap-dsp = { version = "0.1.0", path = "../dsp" }
+dap-dsp = { version = "0.2.0", path = "../dsp" }
 rtrb = "0.4.1"

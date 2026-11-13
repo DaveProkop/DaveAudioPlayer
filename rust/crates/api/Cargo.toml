@@ -18,12 +18,12 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 [dependencies]
 anyhow = "1.0.104"
 crossbeam-channel = "0.5.17"
-dap-analysis = { version = "0.1.0", path = "../analysis" }
-dap-dsp = { version = "0.1.0", path = "../dsp" }
-dap-engine = { version = "0.1.0", path = "../engine" }
-dap-library = { version = "0.1.0", path = "../library" }
-dap-metadata = { version = "0.1.0", path = "../metadata" }
-dap-tags = { version = "0.1.0", path = "../tags" }
+dap-analysis = { version = "0.2.0", path = "../analysis" }
+dap-dsp = { version = "0.2.0", path = "../dsp" }
+dap-engine = { version = "0.2.0", path = "../engine" }
+dap-library = { version = "0.2.0", path = "../library" }
+dap-metadata = { version = "0.2.0", path = "../metadata" }
+dap-tags = { version = "0.2.0", path = "../tags" }
 flutter_rust_bridge = "=2.13.0"
 rusqlite = "0.42.0"
 

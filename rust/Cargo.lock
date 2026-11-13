@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "dap-analysis"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ebur128",
  "realfft",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "dap-audio-io"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cpal",
  "dap-dsp",
@@ -387,11 +387,11 @@ dependencies = [
 
 [[package]]
 name = "dap-dsp"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "dap-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
  "dap-analysis",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "dap-library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dap-analysis",
  "dap-tags",
@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "dap-metadata"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "dap-mixer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dap-dsp",
  "rtrb",
@@ -439,21 +439,21 @@ dependencies = [
 
 [[package]]
 name = "dap-stretch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "dap-tags"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lofty",
 ]
 
 [[package]]
 name = "dap_api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
