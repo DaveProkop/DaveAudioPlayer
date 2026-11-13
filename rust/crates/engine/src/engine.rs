@@ -24,7 +24,7 @@ use dap_library::db::open_reader;
 use dap_library::{
     DbError, ScanJob, ScanReport, add_root, remove_root, repair_overlapping_roots,
 };
-use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan};
+use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan, TransitionShape};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::analyzer::{ANALYSIS_ALGO, Analyzer, stored_loudness};
@@ -769,6 +769,7 @@ impl Control {
             token: current.token,
             start_frame: end - len,
             end_frame: end,
+            shape: TransitionShape::Crossfade,
         })
     }
 

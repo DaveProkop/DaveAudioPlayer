@@ -146,6 +146,48 @@ mod tests {
         assert!((f - 440.0).abs() < 5.0, "{f} Hz");
     }
 
+    /// Where a click at input frame `click` (after `preroll` frames given to `seek`)
+    /// comes out, at a constant `rate`.
+    fn click_out(rate: f64, preroll: usize, click: usize) -> f64 {
+        let mut s = Stretch::new(1, RATE);
+        let mut input = vec![0.0f32; RATE as usize * 3];
+        input[click] = 1.0;
+        s.seek(&input[..preroll], rate);
+        let block_out = 256;
+        let mut out = Vec::new();
+        let mut pos = preroll as f64;
+        while (pos as usize) + 2048 < input.len() {
+            let next = pos + block_out as f64 * rate;
+            let chunk = &input[pos as usize..next as usize];
+            let mut o = vec![0.0f32; block_out];
+            s.process(chunk, &mut o);
+            out.extend_from_slice(&o);
+            pos = next.floor();
+        }
+        let peak = out
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .map(|(i, _)| i)
+            .unwrap();
+        peak as f64
+    }
+
+    #[test]
+    #[ignore = "calibration printout"]
+    fn print_alignment() {
+        let s = Stretch::new(1, RATE);
+        println!("input latency {}, output latency {}", s.input_latency(), s.output_latency());
+        for rate in [1.0, 1.03, 0.97] {
+            for preroll in [s.input_latency(), 6000] {
+                let click = 20_000;
+                let out = click_out(rate, preroll, click);
+                let ideal = (click - preroll) as f64 / rate;
+                println!("rate {rate} preroll {preroll}: out {out} ideal {ideal} diff {}", out - ideal);
+            }
+        }
+    }
+
     #[test]
     fn latencies_are_sane() {
         let s = Stretch::new(2, 48_000);
