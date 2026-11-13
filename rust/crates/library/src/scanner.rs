@@ -35,8 +35,9 @@ const BATCH: usize = 50;
 /// Bytes hashed from the start and from the end of a file.
 const HASH_SPAN: u64 = 16 * 1024;
 /// Bumped when cover extraction changes: every root then gets its covers again once.
-/// Version 2 also stores the key from tags; unchanged files are read once more for it.
-const COVERS_VERSION: &str = "2";
+/// Version 2 also stores the key from tags, 3 the tempo; unchanged files are read once
+/// more for them.
+const COVERS_VERSION: &str = "3";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScanReport {
@@ -388,6 +389,7 @@ fn process_file(
             {
                 assign_cover(conn, c, track_id, &f.abs, tags.cover.as_deref())?;
                 catalog::set_tag_key(conn, track_id, tags.tags.initial_key.as_deref())?;
+                catalog::set_tag_bpm(conn, track_id, tags.tags.bpm.as_deref())?;
             }
         }
         return Ok(());
@@ -463,7 +465,12 @@ fn process_file(
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     let track_id = catalog::upsert_track(conn, names, file_id, &tags.tags, &fallback_title)?;
+    if known.is_some() {
+        // The audio may have changed: measure loudness, key and tempo again.
+        conn.execute("UPDATE analysis SET algo_version = 0 WHERE track_id = ?1", [track_id])?;
+    }
     catalog::set_tag_key(conn, track_id, tags.tags.initial_key.as_deref())?;
+    catalog::set_tag_bpm(conn, track_id, tags.tags.bpm.as_deref())?;
     if let Some(c) = covers {
         assign_cover(conn, c, track_id, &f.abs, tags.cover.as_deref())?;
     }

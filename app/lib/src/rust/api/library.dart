@@ -233,6 +233,8 @@ class TrackDetails {
   /// Camelot key and whether it comes from the file's tags (else it was detected).
   final String? key;
   final bool keyFromTag;
+  final double? bpm;
+  final bool bpmFromTag;
 
   const TrackDetails({
     required this.format,
@@ -243,6 +245,8 @@ class TrackDetails {
     this.loudnessLufs,
     this.key,
     required this.keyFromTag,
+    this.bpm,
+    required this.bpmFromTag,
   });
 
   @override
@@ -254,7 +258,9 @@ class TrackDetails {
       year.hashCode ^
       loudnessLufs.hashCode ^
       key.hashCode ^
-      keyFromTag.hashCode;
+      keyFromTag.hashCode ^
+      bpm.hashCode ^
+      bpmFromTag.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -268,7 +274,9 @@ class TrackDetails {
           year == other.year &&
           loudnessLufs == other.loudnessLufs &&
           key == other.key &&
-          keyFromTag == other.keyFromTag;
+          keyFromTag == other.keyFromTag &&
+          bpm == other.bpm &&
+          bpmFromTag == other.bpmFromTag;
 }
 
 class TrackInfo {
@@ -283,6 +291,9 @@ class TrackInfo {
 
   /// Musical key in Camelot notation ("8A"), from tags or detected; `None` until known.
   final String? key;
+
+  /// Tempo in BPM, from tags or detected.
+  final double? bpm;
 
   /// Cover image files (64 px, 256 px, up to 1024 px); `None` when the track has none.
   final String? coverSmall;
@@ -299,6 +310,7 @@ class TrackInfo {
     this.durationMs,
     required this.missing,
     this.key,
+    this.bpm,
     this.coverSmall,
     this.coverMedium,
     this.coverLarge,
@@ -315,6 +327,7 @@ class TrackInfo {
       durationMs.hashCode ^
       missing.hashCode ^
       key.hashCode ^
+      bpm.hashCode ^
       coverSmall.hashCode ^
       coverMedium.hashCode ^
       coverLarge.hashCode;
@@ -333,6 +346,7 @@ class TrackInfo {
           durationMs == other.durationMs &&
           missing == other.missing &&
           key == other.key &&
+          bpm == other.bpm &&
           coverSmall == other.coverSmall &&
           coverMedium == other.coverMedium &&
           coverLarge == other.coverLarge;

@@ -159,6 +159,13 @@ class QueueView extends StatelessWidget {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 // Each upcoming key compared with the one before it.
+                                                BpmText(
+                                                  bpm: t?.bpm,
+                                                  reference: current != null && i > current
+                                                      ? player.track(queue[i - 1].trackId)?.bpm
+                                                      : null,
+                                                ),
+                                                const SizedBox(width: 6),
                                                 KeyBadge(
                                                   musicKey: t?.key,
                                                   reference: current != null && i > current

@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use dap_analysis::{KeyDetector, LoudnessMeter};
+use dap_analysis::{KeyDetector, LoudnessMeter, TempoDetector};
 use dap_audio_io::Decoder;
 use dap_library::catalog::now_ms;
 use dap_library::db::open_reader;
@@ -23,8 +23,8 @@ use crate::db_writer::DbWriter;
 /// Rows from this version on hold a valid loudness measurement.
 pub const LOUDNESS_ALGO: i64 = 1;
 /// Bumped when the analysis changes; older rows are analyzed again. 2: adds the key,
-/// 3: key from spectral peaks only.
-pub const ANALYSIS_ALGO: i64 = 3;
+/// 3: key from spectral peaks only, 4: adds the tempo.
+pub const ANALYSIS_ALGO: i64 = 4;
 /// Detected keys stay below the confidence that marks a key from tags.
 const MAX_DETECTED_KEY_CONFIDENCE: f64 = 0.99;
 /// How often an idle analyzer looks for new tracks (after a scan, for example).
@@ -46,6 +46,8 @@ struct Measured {
     loudness: TrackLoudness,
     /// Camelot key and confidence.
     key: Option<(String, f64)>,
+    /// BPM and confidence.
+    tempo: Option<(f64, f64)>,
 }
 
 /// Stored loudness of a track; `None` when it has not been analyzed (by this algorithm).
@@ -153,20 +155,23 @@ impl Worker {
                     // retried on every pass; playback treats it as unknown loudness.
                     let m = result.unwrap_or_default();
                     let (key, key_confidence) = m.key.unzip();
+                    let (bpm, bpm_confidence) =
+                        choose_bpm(self.tag_bpm(track_id), m.tempo).unzip();
                     let stored = self.db.call(move |c| {
                         // A key from tags (confidence 1) beats a detected one.
                         c.execute(
                             "INSERT INTO analysis (track_id, algo_version, loudness_lufs,
                                                    true_peak_db, key_camelot, key_confidence,
-                                                   analyzed_at)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                                                   bpm, bpm_confidence, analyzed_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                              ON CONFLICT (track_id) DO UPDATE SET
                                  algo_version = ?2, loudness_lufs = ?3, true_peak_db = ?4,
                                  key_camelot = CASE WHEN analysis.key_confidence >= 1.0
                                      THEN analysis.key_camelot ELSE ?5 END,
                                  key_confidence = CASE WHEN analysis.key_confidence >= 1.0
                                      THEN analysis.key_confidence ELSE ?6 END,
-                                 analyzed_at = ?7",
+                                 bpm = ?7, bpm_confidence = ?8,
+                                 analyzed_at = ?9",
                             params![
                                 track_id,
                                 ANALYSIS_ALGO,
@@ -174,6 +179,8 @@ impl Worker {
                                 m.loudness.true_peak_db,
                                 key,
                                 key_confidence,
+                                bpm,
+                                bpm_confidence,
                                 now_ms()
                             ],
                         )
@@ -227,6 +234,19 @@ impl Worker {
         Some((id, self.track_path(id)?))
     }
 
+    /// The tempo stored from the file's tags, if any.
+    fn tag_bpm(&self, track_id: i64) -> Option<f64> {
+        self.reader
+            .query_row(
+                "SELECT bpm FROM analysis WHERE track_id = ?1 AND bpm_confidence >= 1.0",
+                [track_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
     fn needs_analysis(&self, track_id: i64) -> bool {
         self.reader
             .query_row(
@@ -255,6 +275,20 @@ impl Worker {
     }
 }
 
+/// BPM tags are often wrong (some taggers write a default like 90), so a tag counts only
+/// when the detection agrees with it (also at half / double tempo) or is unsure; a
+/// confident detection that disagrees wins.
+fn choose_bpm(tag: Option<f64>, detected: Option<(f64, f64)>) -> Option<(f64, f64)> {
+    match (tag, detected) {
+        (Some(tag), Some((bpm, conf))) => {
+            let agrees = [1.0, 2.0, 0.5].iter().any(|r| (bpm / (tag * r) - 1.0).abs() <= 0.04);
+            if agrees || conf < 0.5 { Some((tag, 1.0)) } else { Some((bpm, conf)) }
+        }
+        (Some(tag), None) => Some((tag, 1.0)),
+        (None, d) => d,
+    }
+}
+
 /// Decodes the whole file once and measures loudness and key. `None` on a decoding error
 /// or cancel.
 fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
@@ -262,6 +296,7 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
     let info = decoder.info().clone();
     let mut meter = LoudnessMeter::new(info.sample_rate, info.channels).ok()?;
     let mut keys = KeyDetector::new(info.sample_rate, info.channels);
+    let mut tempo = TempoDetector::new(info.sample_rate, info.channels);
     loop {
         if cancel.load(Ordering::Relaxed) {
             return None;
@@ -270,6 +305,7 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
             Ok(Some(chunk)) => {
                 meter.push(chunk).ok()?;
                 keys.push(chunk);
+                tempo.push(chunk);
             }
             Ok(None) => break,
             // What decoded before a damaged spot is still a fair measurement.
@@ -285,5 +321,23 @@ fn measure(path: &Path, cancel: &AtomicBool) -> Option<Measured> {
         key: keys
             .finish()
             .map(|(k, c)| (k.camelot().to_string(), c.min(MAX_DETECTED_KEY_CONFIDENCE))),
+        tempo: tempo
+            .finish()
+            .map(|(b, c)| (b, c.min(MAX_DETECTED_KEY_CONFIDENCE))),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::choose_bpm;
+
+    #[test]
+    fn bpm_tags_count_only_when_the_detection_agrees() {
+        assert_eq!(choose_bpm(Some(128.0), Some((127.6, 0.9))), Some((128.0, 1.0)));
+        assert_eq!(choose_bpm(Some(87.0), Some((174.2, 0.9))), Some((87.0, 1.0)), "half time");
+        assert_eq!(choose_bpm(Some(90.0), Some((124.0, 0.9))), Some((124.0, 0.9)), "wrong tag");
+        assert_eq!(choose_bpm(Some(90.0), Some((124.0, 0.2))), Some((90.0, 1.0)), "unsure");
+        assert_eq!(choose_bpm(Some(90.0), None), Some((90.0, 1.0)));
+        assert_eq!(choose_bpm(None, Some((124.0, 0.3))), Some((124.0, 0.3)));
+    }
 }

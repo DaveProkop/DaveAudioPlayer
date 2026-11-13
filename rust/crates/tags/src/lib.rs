@@ -34,6 +34,8 @@ pub struct TrackTags {
     pub acoustid: Option<String>,
     /// Musical key as written by DJ software ("8A", "Am", "1m"…), unparsed.
     pub initial_key: Option<String>,
+    /// Tempo as written by DJ software ("128", "127.5"), unparsed.
+    pub bpm: Option<String>,
     pub has_embedded_cover: bool,
 }
 
@@ -169,6 +171,7 @@ fn merge(tags: &[&Tag]) -> TrackTags {
         mb_release_id: text(ItemKey::MusicBrainzReleaseId),
         acoustid: text(ItemKey::AcoustId),
         initial_key: text(ItemKey::InitialKey),
+        bpm: text(ItemKey::Bpm).or_else(|| text(ItemKey::IntegerBpm)),
         has_embedded_cover: tags.iter().any(|t| !t.pictures().is_empty()),
     }
 }

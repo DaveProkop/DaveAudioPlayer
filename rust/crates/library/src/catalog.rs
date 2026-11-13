@@ -211,6 +211,31 @@ pub fn set_tag_key(conn: &Connection, track_id: i64, tag: Option<&str>) -> Resul
     Ok(())
 }
 
+/// Stores the tempo from the file's tags, like [`set_tag_key`] (confidence 1 = from tags).
+pub fn set_tag_bpm(conn: &Connection, track_id: i64, tag: Option<&str>) -> Result<()> {
+    match tag.and_then(dap_analysis::parse_bpm_tag) {
+        Some(bpm) => {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence, analyzed_at)
+                 VALUES (?1, 0, ?2, ?3, ?4)
+                 ON CONFLICT (track_id) DO UPDATE SET
+                     bpm = excluded.bpm, bpm_confidence = excluded.bpm_confidence
+                 -- A detected tempo that overruled a wrong tag stays (see the analyzer).
+                 WHERE analysis.bpm IS NULL OR analysis.bpm_confidence >= 1.0",
+                params![track_id, bpm, TAG_KEY_CONFIDENCE, now_ms()],
+            )?;
+        }
+        None => {
+            conn.execute(
+                "UPDATE analysis SET bpm = NULL, bpm_confidence = NULL
+                 WHERE track_id = ?1 AND bpm_confidence >= ?2",
+                params![track_id, TAG_KEY_CONFIDENCE],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Sets a track's own cover (unless the user locked it) and gives its album that cover
 /// when the album has none yet.
 pub fn set_track_cover(conn: &Connection, track_id: i64, cover_id: Option<i64>) -> Result<()> {

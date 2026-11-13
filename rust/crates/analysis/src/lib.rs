@@ -6,7 +6,9 @@
 pub mod chroma;
 pub mod key;
 pub mod loudness;
+pub mod tempo;
 
 pub use chroma::KeyDetector;
 pub use key::{Camelot, Key, key_from_chroma, parse_key_tag};
+pub use tempo::{TempoDetector, parse_bpm_tag};
 pub use loudness::{Loudness, LoudnessMeter, normalization_gain_db};

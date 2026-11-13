@@ -1796,8 +1796,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TrackDetails dco_decode_track_details(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return TrackDetails(
       format: dco_decode_String(arr[0]),
       sampleRate: dco_decode_opt_box_autoadd_u_32(arr[1]),
@@ -1807,6 +1807,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       loudnessLufs: dco_decode_opt_box_autoadd_f_64(arr[5]),
       key: dco_decode_opt_String(arr[6]),
       keyFromTag: dco_decode_bool(arr[7]),
+      bpm: dco_decode_opt_box_autoadd_f_64(arr[8]),
+      bpmFromTag: dco_decode_bool(arr[9]),
     );
   }
 
@@ -1814,8 +1816,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TrackInfo dco_decode_track_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return TrackInfo(
       id: dco_decode_i_64(arr[0]),
       title: dco_decode_String(arr[1]),
@@ -1826,9 +1828,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       durationMs: dco_decode_opt_box_autoadd_i_64(arr[6]),
       missing: dco_decode_bool(arr[7]),
       key: dco_decode_opt_String(arr[8]),
-      coverSmall: dco_decode_opt_String(arr[9]),
-      coverMedium: dco_decode_opt_String(arr[10]),
-      coverLarge: dco_decode_opt_String(arr[11]),
+      bpm: dco_decode_opt_box_autoadd_f_64(arr[9]),
+      coverSmall: dco_decode_opt_String(arr[10]),
+      coverMedium: dco_decode_opt_String(arr[11]),
+      coverLarge: dco_decode_opt_String(arr[12]),
     );
   }
 
@@ -2388,6 +2391,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_loudnessLufs = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_key = sse_decode_opt_String(deserializer);
     var var_keyFromTag = sse_decode_bool(deserializer);
+    var var_bpm = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_bpmFromTag = sse_decode_bool(deserializer);
     return TrackDetails(
       format: var_format,
       sampleRate: var_sampleRate,
@@ -2397,6 +2402,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       loudnessLufs: var_loudnessLufs,
       key: var_key,
       keyFromTag: var_keyFromTag,
+      bpm: var_bpm,
+      bpmFromTag: var_bpmFromTag,
     );
   }
 
@@ -2412,6 +2419,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_durationMs = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_missing = sse_decode_bool(deserializer);
     var var_key = sse_decode_opt_String(deserializer);
+    var var_bpm = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_coverSmall = sse_decode_opt_String(deserializer);
     var var_coverMedium = sse_decode_opt_String(deserializer);
     var var_coverLarge = sse_decode_opt_String(deserializer);
@@ -2425,6 +2433,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       durationMs: var_durationMs,
       missing: var_missing,
       key: var_key,
+      bpm: var_bpm,
       coverSmall: var_coverSmall,
       coverMedium: var_coverMedium,
       coverLarge: var_coverLarge,
@@ -2944,6 +2953,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_f_64(self.loudnessLufs, serializer);
     sse_encode_opt_String(self.key, serializer);
     sse_encode_bool(self.keyFromTag, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.bpm, serializer);
+    sse_encode_bool(self.bpmFromTag, serializer);
   }
 
   @protected
@@ -2958,6 +2969,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_i_64(self.durationMs, serializer);
     sse_encode_bool(self.missing, serializer);
     sse_encode_opt_String(self.key, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.bpm, serializer);
     sse_encode_opt_String(self.coverSmall, serializer);
     sse_encode_opt_String(self.coverMedium, serializer);
     sse_encode_opt_String(self.coverLarge, serializer);

@@ -24,6 +24,8 @@ pub struct TrackInfo {
     pub missing: bool,
     /// Musical key in Camelot notation ("8A"), from tags or detected; `None` until known.
     pub key: Option<String>,
+    /// Tempo in BPM, from tags or detected.
+    pub bpm: Option<f64>,
     /// Cover image files (64 px, 256 px, up to 1024 px); `None` when the track has none.
     pub cover_small: Option<String>,
     pub cover_medium: Option<String>,
@@ -79,6 +81,8 @@ pub struct TrackDetails {
     /// Camelot key and whether it comes from the file's tags (else it was detected).
     pub key: Option<String>,
     pub key_from_tag: bool,
+    pub bpm: Option<f64>,
+    pub bpm_from_tag: bool,
 }
 
 /// Closes the read connection (on engine stop, so the database file is released).
@@ -132,7 +136,7 @@ const TRACK_COLUMNS: &str = "t.id, t.title,
               JOIN artist a ON a.id = ta.artist_id
               WHERE ta.track_id = t.id AND ta.role = 'main'), ''),
     coalesce(al.title, ''), t.track_no, f.duration_ms, f.missing, c.hash, t.album_id,
-    an.key_camelot";
+    an.key_camelot, an.bpm";
 
 const TRACK_JOINS: &str = "FROM track t
     JOIN file f ON f.id = t.file_id
@@ -157,6 +161,7 @@ fn row_to_track(r: &rusqlite::Row<'_>, covers: &Path) -> rusqlite::Result<TrackI
         duration_ms: r.get(5)?,
         missing: r.get(6)?,
         key: r.get(9)?,
+        bpm: r.get(10)?,
         cover_small: c.small,
         cover_medium: c.medium,
         cover_large: c.large,
@@ -393,7 +398,8 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
     with_reader(|c| {
         c.query_row(
             "SELECT f.format, f.sample_rate, f.bit_depth, f.bitrate, t.year, a.loudness_lufs,
-                    a.key_camelot, coalesce(a.key_confidence, 0) >= 1.0
+                    a.key_camelot, coalesce(a.key_confidence, 0) >= 1.0,
+                    a.bpm, coalesce(a.bpm_confidence, 0) >= 1.0
              FROM track t JOIN file f ON f.id = t.file_id
              LEFT JOIN analysis a ON a.track_id = t.id
              WHERE t.id = ?1",
@@ -408,6 +414,8 @@ pub fn track_details(track_id: i64) -> Result<Option<TrackDetails>> {
                     loudness_lufs: r.get(5)?,
                     key: r.get(6)?,
                     key_from_tag: r.get(7)?,
+                    bpm: r.get(8)?,
+                    bpm_from_tag: r.get(9)?,
                 })
             },
         )

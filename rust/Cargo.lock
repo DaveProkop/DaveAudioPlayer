@@ -355,6 +355,7 @@ dependencies = [
  "dap-dsp",
  "dap-library",
  "dap-mixer",
+ "dap-tags",
  "notify",
  "rtrb",
  "rusqlite",

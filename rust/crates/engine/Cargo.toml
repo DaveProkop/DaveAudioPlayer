@@ -19,3 +19,6 @@ dap-mixer = { version = "0.1.0", path = "../mixer" }
 notify = "8.2.1"
 rtrb = "0.4.1"
 rusqlite = "0.42.0"
+
+[dev-dependencies]
+dap-tags = { path = "../tags" }

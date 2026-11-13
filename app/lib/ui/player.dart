@@ -480,6 +480,8 @@ class NowPlayingView extends StatelessWidget {
           if (details != null) _format(details),
           if (details?.loudnessLufs != null && (s?.normalize ?? false))
             'Hlasitost ${details!.loudnessLufs!.toStringAsFixed(1).replaceAll('.', ',').replaceAll('-', '−')} → −18 LUFS',
+          if (details?.bpm != null)
+            '${details!.bpm!.toStringAsFixed(1).replaceAll('.', ',')} BPM · ${details.bpmFromTag ? 'z tagu' : 'odhad'}',
           if (details?.key != null) 'Tónina ${details!.key} · ${details.keyFromTag ? 'z tagu' : 'odhad'}',
           if (s?.eqEnabled ?? false) 'EQ zapnutý',
         ];

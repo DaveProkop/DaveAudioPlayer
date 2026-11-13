@@ -221,6 +221,8 @@ class TrackRow extends StatelessWidget {
                         style: TextStyle(color: muted),
                       ),
                     ),
+                  BpmText(bpm: track.bpm, reference: playing ? null : player.currentTrack?.bpm),
+                  const SizedBox(width: 6),
                   KeyBadge(musicKey: track.key, reference: reference),
                   SizedBox(
                     width: 56,
@@ -249,6 +251,8 @@ class TrackRow extends StatelessWidget {
                       ],
                     ),
                   ),
+                  BpmText(bpm: track.bpm, reference: playing ? null : player.currentTrack?.bpm),
+                  const SizedBox(width: 6),
                   KeyBadge(musicKey: track.key, reference: reference),
                   const SizedBox(width: 8),
                   Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall?.copyWith(color: muted)),
@@ -403,6 +407,50 @@ class KeyBadge extends StatelessWidget {
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
               color: fits ? const Color(0xFF111111) : color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether two tempos mix without stretching much: within 6 %, also at half / double time.
+bool tempoCompatible(double? a, double? b) {
+  if (a == null || b == null || a <= 0 || b <= 0) return false;
+  for (final r in const [1.0, 2.0, 0.5]) {
+    if ((a / (b * r) - 1).abs() <= 0.06) return true;
+  }
+  return false;
+}
+
+/// The tempo ("128"), faded when it does not fit `reference` (the tempo it would follow).
+class BpmText extends StatelessWidget {
+  const BpmText({super.key, required this.bpm, this.reference});
+
+  final double? bpm;
+  final double? reference;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final b = bpm;
+    if (b == null) return const SizedBox(width: 30);
+    final fits = reference != null && tempoCompatible(b, reference);
+    return SizedBox(
+      width: 30,
+      child: Tooltip(
+        message: '${b.toStringAsFixed(1).replaceAll('.', ',')} BPM',
+        child: Opacity(
+          opacity: reference != null && !fits ? .45 : 1,
+          child: Text(
+            '${b.round()}',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: fits ? FontWeight.w700 : FontWeight.w400,
+              color: fits ? scheme.onSurface : scheme.onSurfaceVariant,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
