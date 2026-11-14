@@ -100,7 +100,8 @@ Ořez ticha a fade-outů: přechody končí ve skutečném konci skladby (u fade
 o 20 dB), další skladba začne prvním zvukem.
 Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio přes ndk-context),
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
-Release 0.2.0 (Windows zip, podepsané APK) je v `dist/`; na telefonu zatím 0.1.0.
+Release 0.2.0 (Windows zip, podepsané APK) je v `dist/` a běží na telefonu. Na Androidu se C++ runtime
+(`dap-stretch`) linkuje staticky (`c++_static`), APK nemá `libc++_shared.so`.
 Chytré playlisty (`dap_library::smart`: pravidla JSON v `playlist.rules`, jen povolená pole,
 hodnoty jako SQL parametry), hodnocení 0–5 hvězd (`track.rating` = 2×), přeskočení
 (Next v 1. polovině → `skip_count` + `play_history.skipped`), stránka Statistiky.
