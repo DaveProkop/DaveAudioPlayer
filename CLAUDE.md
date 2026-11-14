@@ -104,7 +104,8 @@ Release 0.2.0 (Windows zip, podepsané APK) je v `dist/` a běží na telefonu. 
 (`dap-stretch`) linkuje staticky (`c++_static`), APK nemá `libc++_shared.so`.
 Místní zarovnání dob před beat přechodem (vlákno `aligner`: fáze z krátkého okna u konce
 odcházející a u první doby příchozí, zpřesněná na nástupy ve zvuku; ±3 ms i s chybou tempa
-0,1 BPM). Výběr jiné skladby během hraní: prolnout 1,5 s / hned / jako další
+0,1 BPM; místní tempo z proložení nástupů; bez ≥ 8 zřetelných stabilních úderů v okně →
+skladba „beat_unsure“ → místo beatmatche filtr; `--example beat_report`). Výběr jiné skladby během hraní: prolnout 1,5 s / hned / jako další
 (`player.switch_mode`, `ReplaceQueue`). Procházení podle složek, potvrzení vyprázdnění
 fronty, délka přechodu v nastavení, „Právě hraje“ na mobilu bez posouvání.
 Chytré playlisty (`dap_library::smart`: pravidla JSON v `playlist.rules`, jen povolená pole,

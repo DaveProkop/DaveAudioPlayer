@@ -765,15 +765,26 @@ fn write_clicks(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>) {
 
 /// A mono WAV of `len_s` long sine bursts at `freq` Hz on `beats`, silent otherwise.
 fn write_bursts(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>, freq: f64, len_s: f64) {
+    write_bursts_at(path, seconds, beats.map(|t| (t, 20_000.0)), freq, len_s);
+}
+
+/// Like [`write_bursts`], with an amplitude per burst.
+fn write_bursts_at(
+    path: &Path,
+    seconds: f64,
+    beats: impl Iterator<Item = (f64, f64)>,
+    freq: f64,
+    len_s: f64,
+) {
     let frames = (seconds * f64::from(RATE)) as usize;
     let mut pcm = vec![0i16; frames];
     let click = (f64::from(RATE) * len_s) as usize;
-    for t in beats {
+    for (t, amplitude) in beats {
         let at = (t * f64::from(RATE)).round() as usize;
         for i in 0..click.min(frames.saturating_sub(at)) {
             let phase = 2.0 * std::f64::consts::PI * freq * i as f64 / f64::from(RATE);
             // Starts at a non-zero sample, so the click onset is exact.
-            pcm[at + i] = (20_000.0 * (phase + 0.5).sin()) as i16;
+            pcm[at + i] = (amplitude * (phase + 0.5).sin()) as i16;
         }
     }
     let data_len = (frames * 2) as u32;
@@ -797,12 +808,15 @@ fn write_bursts(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>, fre
 #[test]
 fn beatmatch_lands_the_incoming_beats_on_the_outgoing_grid() {
     let dir = TempDir::new("beatmatch");
-    // a: 120 BPM, first beat 0.25 s; clicks only in its first 2 s so that later the
-    // incoming track can be heard alone. b: 125 BPM, first beat 0.4 s.
-    write_clicks(
+    // a: 120 BPM, first beat 0.25 s; loud clicks in its first 2 s, then quiet ones: a
+    // steady beat to align on that the incoming clicks easily outweigh. b: 125 BPM,
+    // first beat 0.4 s.
+    write_bursts_at(
         &dir.music().join("a.wav"),
         20.0,
-        (0..4).map(|k| 0.25 + 0.5 * k as f64),
+        (0..40).map(|k| (0.25 + 0.5 * k as f64, if k < 4 { 20_000.0 } else { 600.0 })),
+        2000.0,
+        0.002,
     );
     write_clicks(
         &dir.music().join("b.wav"),
@@ -1206,7 +1220,7 @@ fn next_early_in_a_track_counts_as_a_skip() {
     });
     engine.send(Command::Play);
     wait_for(&engine, |e| matches!(e, Event::State(s) if s.status == Status::Playing));
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(300));
     engine.send(Command::Next);
     wait_for(&engine, |e| matches!(e, Event::State(s) if s.index == Some(1)));
     engine.shutdown();
@@ -1360,9 +1374,10 @@ fn beats_are_aligned_where_the_mix_happens_even_with_an_imprecise_grid() {
     let out = captured_from_first_sound(&capture);
     let diff: Vec<f32> = out.windows(2).map(|w| w[1] - w[0]).collect();
     let rate = f64::from(RATE);
-    // Index 0 is a's first beat (0.25 s into a).
+    // Index 0 is a's first beat (0.25 s into a). From beat 4 on b is loud enough for its
+    // clicks to stand out from a's bursts.
     let first = (start_ms as f64 / 1000.0 - 0.25) * rate;
-    for j in 2..12 {
+    for j in 4..12 {
         let expected = first + j as f64 * 0.5 * rate;
         let (lo, hi) = ((expected - 0.1 * rate) as usize, (expected + 0.1 * rate) as usize);
         let peak = lo
@@ -1375,5 +1390,45 @@ fn beats_are_aligned_where_the_mix_happens_even_with_an_imprecise_grid() {
         let ms = (peak as f64 - expected) / rate * 1000.0;
         assert!(ms.abs() < 5.0, "b beat {j}: {ms:.1} ms off a's beat");
     }
+}
+
+#[test]
+fn without_a_steady_beat_at_the_mix_point_there_is_no_beatmatch() {
+    let dir = TempDir::new("unsure");
+    // a has beats only in its first 2 s, then silence: nothing to align on at its end.
+    write_clicks(&dir.music().join("a.wav"), 20.0, (0..4).map(|k| 0.25 + 0.5 * k as f64));
+    write_clicks(&dir.music().join("b.wav"), 20.0, (0..40).map(|k| 0.4 + 0.48 * k as f64));
+    let id = scan(&dir);
+    {
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, bpm, first) in [("a.wav", 120.0, 250), ("b.wav", 125.0, 400)] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
+                                       first_beat_ms, analyzed_at)
+                 VALUES (?1, ?2, ?3, 1.0, ?4, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first],
+            )
+            .unwrap();
+        }
+    }
+    let engine = start(&dir, None);
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    let events = play_to_the_end(&engine);
+    engine.shutdown();
+    // First planned as a beatmatch (the grids match), then measured and changed.
+    let last = events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            Event::State(s) => s.transition,
+            _ => None,
+        })
+        .expect("a transition");
+    assert_eq!(last.kind, TransitionKind::FilterSweep, "{last:?}");
 }
 

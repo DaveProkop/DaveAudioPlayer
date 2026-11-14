@@ -84,6 +84,11 @@ class SeekBar extends StatefulWidget {
 class _SeekBarState extends State<SeekBar> {
   double? _drag;
 
+  /// After a seek: the target, shown until the engine reports a position near it (or a
+  /// second passes), so the thumb does not jump back meanwhile.
+  double? _target;
+  DateTime _targetSince = DateTime.now();
+
   @override
   Widget build(BuildContext context) {
     final p = widget.player;
@@ -92,7 +97,13 @@ class _SeekBarState extends State<SeekBar> {
       player: p,
       builder: (context) {
         final duration = p.state?.durationMs ?? 0;
-        final pos = _drag ?? p.positionMs.toDouble();
+        final target = _target;
+        if (target != null &&
+            ((p.positionMs - target).abs() < 1500 ||
+                DateTime.now().difference(_targetSince) > const Duration(seconds: 1))) {
+          _target = null;
+        }
+        final pos = _drag ?? _target ?? p.positionMs.toDouble();
         final fade = duration > 0 ? fadeMsAtEnd(p) / duration : 0.0;
         final time = TextStyle(
           fontSize: 12,
@@ -123,7 +134,11 @@ class _SeekBarState extends State<SeekBar> {
                 max: duration > 0 ? duration.toDouble() : 1,
                 onChanged: duration > 0 ? (v) => setState(() => _drag = v) : null,
                 onChangeEnd: (v) {
-                  setState(() => _drag = null);
+                  setState(() {
+                    _drag = null;
+                    _target = v;
+                    _targetSince = DateTime.now();
+                  });
                   rust.seek(positionMs: v.round());
                 },
               ),

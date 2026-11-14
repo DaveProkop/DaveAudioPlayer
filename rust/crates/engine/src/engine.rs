@@ -641,8 +641,11 @@ struct Control {
     switching: Option<(TransitionPlan, bool)>,
     /// Measures beat phases around mix points.
     aligner: Aligner,
-    /// Locally measured first beats (output-rate frames) of incoming tracks.
-    start_fix: HashMap<i64, f64>,
+    /// Locally measured beat grids (first beat, period; output-rate frames) of incoming
+    /// tracks.
+    start_fix: HashMap<i64, (f64, f64)>,
+    /// Tracks without a steady beat where they would be mixed: no beat-based transitions.
+    beat_unsure: HashSet<i64>,
     /// Alignments asked for: (track, at the end).
     aligned: HashSet<(i64, bool)>,
 }
@@ -786,6 +789,7 @@ impl Control {
             switching: None,
             aligner: Aligner::start(),
             start_fix: HashMap::new(),
+            beat_unsure: HashSet::new(),
             aligned: HashSet::new(),
         };
         let mut control = control;
@@ -898,7 +902,13 @@ impl Control {
         let current = self.current.as_ref()?;
         let next = self.next.as_ref()?;
         let ms = |frame: u64| current.source_frame(frame) * 1000 / u64::from(self.sample_rate);
-        Some(match self.plan_sent.filter(|p| p.token == current.token) {
+        // Right after a load the plan for the new deck is not sent yet: report the one
+        // that will be, so the UI does not flash "gapless" first.
+        let plan = self
+            .plan_sent
+            .filter(|p| p.token == current.token)
+            .or_else(|| self.wanted_plan());
+        Some(match plan {
             Some(plan) => UpcomingTransition {
                 forced: next.forced,
                 kind: match plan.shape {
@@ -1134,6 +1144,12 @@ impl Control {
         if !self.settings.smart_transitions {
             return plain;
         }
+        // Without a steady beat where the mix happens, aligning beats would go wrong.
+        let unsure = self.beat_unsure.contains(&current.entry.track_id)
+            || self.beat_unsure.contains(&track_id);
+        if unsure {
+            return auto(Mix::FilterSweep).unwrap_or(plain);
+        }
         if let Some(incoming) = auto(Mix::Beatmatch) {
             return incoming;
         }
@@ -1315,33 +1331,57 @@ impl Control {
     }
 
     /// Applies measured beats: the grid is moved to the measured beat (keeping the beat
-    /// numbering), unless the measurement is far off (then it locked onto something else).
+    /// numbering) and takes the measured period, unless the measurement is far off (then
+    /// it locked onto something else). Where no steady beat was found, the pair gets no
+    /// beat-based transition.
     fn drain_alignment(&mut self) {
         let results: Vec<_> = self.aligner.done.try_iter().collect();
+        if results.is_empty() {
+            return;
+        }
         let rate = f64::from(self.sample_rate);
         for r in results {
-            let measured = r.beat_s * rate;
-            let shifted = |b: Beats| -> Option<f64> {
+            let Some((beat_s, period_s)) = r.beat else {
+                self.beat_unsure.insert(r.track_id);
+                continue;
+            };
+            let (measured, period) = (beat_s * rate, period_s * rate);
+            let moved = |b: Beats| -> Option<Beats> {
                 let n = ((measured - b.first) / b.period).round();
-                let first = measured - n * b.period;
-                ((first - b.first).abs() <= 0.45 * b.period).then_some(first)
+                // Beat n of the stored grid becomes the measured beat; the grid around it
+                // follows the measured period (the numbering, and so the phrases, stay).
+                let near = (measured - (b.first + n * b.period)).abs() <= 0.45 * b.period;
+                let same_tempo = (period / b.period - 1.0).abs() < 0.01;
+                (near && same_tempo).then_some(Beats {
+                    first: measured - n * period,
+                    period,
+                })
             };
             if r.at_end {
                 if let Some(current) = self.current.as_mut()
                     && current.entry.track_id == r.track_id
                     && let Some(b) = current.beats
-                    && let Some(first) = shifted(b)
                 {
-                    current.beats = Some(Beats { first, ..b });
+                    match moved(b) {
+                        Some(fixed) => current.beats = Some(fixed),
+                        None => {
+                            self.beat_unsure.insert(r.track_id);
+                        }
+                    }
                 }
-            } else if let Some(b) = self.beats(r.track_id)
-                && let Some(first) = shifted(b)
-            {
-                self.start_fix.insert(r.track_id, first);
-                // The next deck starts at its first beat: load it again from there.
-                self.preload_next();
+            } else if let Some(b) = self.beats(r.track_id) {
+                match moved(b) {
+                    Some(fixed) => {
+                        self.start_fix.insert(r.track_id, (fixed.first, fixed.period));
+                    }
+                    None => {
+                        self.beat_unsure.insert(r.track_id);
+                    }
+                }
             }
         }
+        // The next deck may start elsewhere, play at another rate, or mix another way.
+        self.preload_next();
     }
 
     /// Whether `track_id` is the next track of `current`'s album (played gapless).
@@ -1382,14 +1422,12 @@ impl Control {
             .flatten()?;
         let (bpm, first_ms) = (bpm.filter(|b| *b > 0.0)?, first_ms?);
         let rate = f64::from(self.sample_rate);
-        Some(Beats {
-            first: self
-                .start_fix
-                .get(&track_id)
-                .copied()
-                .unwrap_or(first_ms.max(0) as f64 * rate / 1000.0),
-            period: 60.0 * rate / bpm,
-        })
+        let (first, period) = self
+            .start_fix
+            .get(&track_id)
+            .copied()
+            .unwrap_or((first_ms.max(0) as f64 * rate / 1000.0, 60.0 * rate / bpm));
+        Some(Beats { first, period })
     }
 
     /// How track `track_id` should play to be beatmatched into `current`, if it can be.

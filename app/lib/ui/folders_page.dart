@@ -23,6 +23,9 @@ class _FoldersPageState extends State<FoldersPage> {
   String _rootName = '';
   String _dir = '';
 
+  /// Show the tracks of all subfolders too, as one list.
+  bool _deep = false;
+
   void _open({int? root, String rootName = '', String dir = ''}) => setState(() {
     _root = root;
     _rootName = rootName;
@@ -62,9 +65,17 @@ class _FoldersPageState extends State<FoldersPage> {
         if (!didPop) _up();
       },
       child: LibraryFuture<FolderListing>(
-        key: ValueKey('$root/$_dir'),
+        key: ValueKey('$root/$_dir/$_deep'),
         player: widget.player,
-        load: () => folderListing(rootId: root, dir: _dir),
+        load: () async {
+          final listing = await folderListing(rootId: root, dir: _dir);
+          if (!_deep || root == null) return listing;
+          return FolderListing(
+            folders: listing.folders,
+            rootIds: listing.rootIds,
+            tracks: await folderTracks(rootId: root, dir: _dir),
+          );
+        },
         builder: (context, listing) => CustomScrollView(
           slivers: [
             SliverPadding(
@@ -96,6 +107,8 @@ class _FoldersPageState extends State<FoldersPage> {
                         padding: const EdgeInsets.only(top: 4, bottom: 8),
                         child: Wrap(
                           spacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          runSpacing: 8,
                           children: [
                             FilledButton.icon(
                               onPressed: () => _playFolder(),
@@ -106,6 +119,11 @@ class _FoldersPageState extends State<FoldersPage> {
                               onPressed: () => _playFolder(queue: true),
                               icon: const Icon(Icons.playlist_add),
                               label: const Text('Do fronty'),
+                            ),
+                            FilterChip(
+                              label: const Text('Včetně podsložek'),
+                              selected: _deep,
+                              onSelected: (v) => setState(() => _deep = v),
                             ),
                           ],
                         ),
