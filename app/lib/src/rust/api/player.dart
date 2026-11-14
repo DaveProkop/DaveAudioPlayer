@@ -94,6 +94,17 @@ Future<OutputDevices> outputDevices() =>
 Future<void> setOutputDevice({String? name}) =>
     RustLib.instance.api.crateApiPlayerSetOutputDevice(name: name);
 
+Future<void> setSwitchMode({required SwitchModeDto mode}) =>
+    RustLib.instance.api.crateApiPlayerSetSwitchMode(mode: mode);
+
+/// Replaces the queue with tracks and plays item `start` (an album, a list). While
+/// something plays, the switch follows the switch mode (a short fade by default).
+Future<void> replaceQueue({required Int64List trackIds, required int start}) =>
+    RustLib.instance.api.crateApiPlayerReplaceQueue(
+      trackIds: trackIds,
+      start: start,
+    );
+
 /// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
 Future<void> setMixMode({required MixModeDto mode}) =>
     RustLib.instance.api.crateApiPlayerSetMixMode(mode: mode);
@@ -265,6 +276,7 @@ enum PlayStatus { stopped, playing, paused }
 /// Playback preferences as stored by the engine.
 class PlayerSettingsDto {
   final MixModeDto mixMode;
+  final SwitchModeDto switchMode;
   final int crossfadeMs;
   final bool normalize;
   final bool smartTransitions;
@@ -275,6 +287,7 @@ class PlayerSettingsDto {
 
   const PlayerSettingsDto({
     required this.mixMode,
+    required this.switchMode,
     required this.crossfadeMs,
     required this.normalize,
     required this.smartTransitions,
@@ -287,6 +300,7 @@ class PlayerSettingsDto {
   @override
   int get hashCode =>
       mixMode.hashCode ^
+      switchMode.hashCode ^
       crossfadeMs.hashCode ^
       normalize.hashCode ^
       smartTransitions.hashCode ^
@@ -301,6 +315,7 @@ class PlayerSettingsDto {
       other is PlayerSettingsDto &&
           runtimeType == other.runtimeType &&
           mixMode == other.mixMode &&
+          switchMode == other.switchMode &&
           crossfadeMs == other.crossfadeMs &&
           normalize == other.normalize &&
           smartTransitions == other.smartTransitions &&
@@ -424,6 +439,18 @@ class ScanSummaryDto {
           missing == other.missing &&
           failed == other.failed &&
           cancelled == other.cancelled;
+}
+
+/// What choosing another track does while one is playing.
+enum SwitchModeDto {
+  /// A short crossfade into the chosen track.
+  fade,
+
+  /// Straight over.
+  cut,
+
+  /// The chosen track plays after the current one (the UI queues it).
+  queue,
 }
 
 class TransitionDto {

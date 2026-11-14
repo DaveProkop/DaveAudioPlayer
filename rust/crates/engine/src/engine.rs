@@ -8,7 +8,7 @@
 //! current deck as soon as its exact length is known; consecutive tracks of one album stay
 //! gapless. Loudness normalization sets each deck's gain from the stored EBU R128 analysis.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -25,6 +25,7 @@ use dap_library::{DbError, ScanJob, ScanReport, add_root, remove_root, repair_ov
 use dap_mixer::{MixerCommand, MixerControl, MixerEvent, TransitionPlan, TransitionShape};
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::aligner::{AlignRequest, Aligner};
 use crate::analyzer::{ANALYSIS_ALGO, Analyzer, stored_loudness};
 use crate::db_writer::DbWriter;
 use crate::deck::{DeckInfo, StretchPlan, spawn_deck};
@@ -42,6 +43,9 @@ const SETTING_CROSSFADE: &str = "player.crossfade_ms";
 const SETTING_NORMALIZE: &str = "player.normalize";
 const SETTING_SMART: &str = "player.smart_transitions";
 const SETTING_MIX_MODE: &str = "player.mix_mode";
+const SETTING_SWITCH_MODE: &str = "player.switch_mode";
+/// How long a manual switch to another track crossfades.
+const SWITCH_FADE_MS: u64 = 1500;
 /// Name of the chosen sound device (absent = the system default).
 pub const SETTING_OUTPUT_DEVICE: &str = "player.output_device";
 const SETTING_VOLUME: &str = "player.volume";
@@ -127,6 +131,14 @@ pub enum Command {
     SetSmartTransitions(bool),
     /// Switches to a mix mode: its crossfade, its transitions and its mix ordering.
     SetMixMode(MixMode),
+    /// What choosing another track does while one is playing.
+    SetSwitchMode(SwitchMode),
+    /// Replaces the queue with `track_ids` and plays item `start` (an album, a list).
+    /// While something plays, the switch follows the switch mode (a short fade).
+    ReplaceQueue {
+        track_ids: Vec<i64>,
+        start: usize,
+    },
     /// Plays on the sound device of this name (`None` = the system default). Stored; an
     /// unplugged device falls back to the default.
     SetOutputDevice(Option<String>),
@@ -280,9 +292,37 @@ impl MixMode {
     }
 }
 
+/// What choosing another track does while one is playing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwitchMode {
+    /// A short crossfade into the chosen track.
+    Fade,
+    /// Straight over, as a skip.
+    Cut,
+    /// The chosen track plays next (decided by the UI; the engine switches like `Cut`).
+    Queue,
+}
+
+impl SwitchMode {
+    fn name(self) -> &'static str {
+        match self {
+            SwitchMode::Fade => "fade",
+            SwitchMode::Cut => "cut",
+            SwitchMode::Queue => "queue",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        [SwitchMode::Fade, SwitchMode::Cut, SwitchMode::Queue]
+            .into_iter()
+            .find(|m| m.name() == name)
+    }
+}
+
 /// Playback preferences, stored in the database.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayerSettings {
+    pub switch_mode: SwitchMode,
     /// The profile below; `crossfade_ms` and `smart_transitions` follow it (the commands
     /// that set them directly are for tests and tools).
     pub mix_mode: MixMode,
@@ -596,6 +636,15 @@ struct Control {
     reported_transition: Option<UpcomingTransition>,
     /// How the output was started, to start it again on another device.
     output_config: OutputConfig,
+    /// A manual switch fading into the next deck: its plan (kept until the next deck
+    /// starts) and whether the track it leaves counts as played.
+    switching: Option<(TransitionPlan, bool)>,
+    /// Measures beat phases around mix points.
+    aligner: Aligner,
+    /// Locally measured first beats (output-rate frames) of incoming tracks.
+    start_fix: HashMap<i64, f64>,
+    /// Alignments asked for: (track, at the end).
+    aligned: HashSet<(i64, bool)>,
 }
 
 /// Which library roots a scan covers.
@@ -673,6 +722,9 @@ impl Control {
             });
         let smart_transitions = read_setting(&reader, SETTING_SMART).is_none_or(|v| v != 0);
         let settings = PlayerSettings {
+            switch_mode: read_setting_str(&reader, SETTING_SWITCH_MODE)
+                .and_then(|v| SwitchMode::from_name(&v))
+                .unwrap_or(SwitchMode::Fade),
             mix_mode: read_setting_str(&reader, SETTING_MIX_MODE)
                 .and_then(|v| MixMode::from_name(&v))
                 .unwrap_or_else(|| MixMode::closest(crossfade_ms, smart_transitions)),
@@ -731,6 +783,10 @@ impl Control {
             reported_rate: 1.0,
             reported_transition: None,
             output_config: config.output.clone(),
+            switching: None,
+            aligner: Aligner::start(),
+            start_fix: HashMap::new(),
+            aligned: HashSet::new(),
         };
         let mut control = control;
         control.init_mixer();
@@ -766,6 +822,7 @@ impl Control {
             }
             self.drain_mixer_events();
             self.drain_analysis();
+            self.drain_alignment();
             self.drain_folder_changes();
             self.update_transition();
         }
@@ -990,6 +1047,7 @@ impl Control {
 
     /// Makes queue item `index` current, starting at `start_ms`.
     fn play_index(&mut self, index: usize, start_ms: u64, autoplay: bool) {
+        self.switching = None;
         let Some(entry) = self.queue.get(index) else {
             return;
         };
@@ -1011,6 +1069,9 @@ impl Control {
 
     /// Ensures the deck after the current item holds the right track (gapless preload).
     fn preload_next(&mut self) {
+        if self.switching.is_some() {
+            return; // the next deck is the one a manual switch fades into
+        }
         let want = self.cursor_index().and_then(|i| self.queue.get(i + 1));
         let incoming = match (want, self.current.as_ref()) {
             (Some(e), Some(current)) => Some(self.incoming_for(current, e.track_id)),
@@ -1033,6 +1094,7 @@ impl Control {
                 self.current = current;
                 self.next = Some(loaded);
                 self.send_mixer(MixerCommand::SetNext(input));
+                self.request_alignment();
             }
             _ => {
                 if self.next.take().is_some() {
@@ -1206,6 +1268,82 @@ impl Control {
             .and_then(|k| Camelot::parse(&k))
     }
 
+    /// Before a beat-based transition: measure the beats where the mix happens, near the
+    /// end of the current track and at the first beat of the next one.
+    fn request_alignment(&mut self) {
+        let (Some(current), Some(next)) = (self.current.as_ref(), self.next.as_ref()) else {
+            return;
+        };
+        if !matches!(next.mix, Mix::Beatmatch | Mix::EchoOut | Mix::HardCut) {
+            return;
+        }
+        let rate = f64::from(self.sample_rate);
+        let mut requests = Vec::new();
+        if let (Some(beats), Some(end)) = (current.beats, current.audio_end.or(current.info.end_frame()))
+            && !self.aligned.contains(&(current.entry.track_id, true))
+            && let Some(path) = self.track_file(current.entry.track_id).0
+        {
+            // Transitions start within the last phrase or two before the end.
+            let end_s = end as f64 / rate;
+            requests.push(AlignRequest {
+                track_id: current.entry.track_id,
+                path,
+                from_s: (end_s - 26.0).max(0.0),
+                to_s: (end_s - 2.0).max(4.0),
+                period_s: beats.period / rate,
+                at_end: true,
+            });
+        }
+        if let Some(beats) = next.beats
+            && !self.aligned.contains(&(next.entry.track_id, false))
+            && let Some(path) = self.track_file(next.entry.track_id).0
+        {
+            let first_s = beats.first / rate;
+            requests.push(AlignRequest {
+                track_id: next.entry.track_id,
+                path,
+                from_s: (first_s - 1.0).max(0.0),
+                to_s: first_s + 20.0,
+                period_s: beats.period / rate,
+                at_end: false,
+            });
+        }
+        for req in requests {
+            self.aligned.insert((req.track_id, req.at_end));
+            self.aligner.request(req);
+        }
+    }
+
+    /// Applies measured beats: the grid is moved to the measured beat (keeping the beat
+    /// numbering), unless the measurement is far off (then it locked onto something else).
+    fn drain_alignment(&mut self) {
+        let results: Vec<_> = self.aligner.done.try_iter().collect();
+        let rate = f64::from(self.sample_rate);
+        for r in results {
+            let measured = r.beat_s * rate;
+            let shifted = |b: Beats| -> Option<f64> {
+                let n = ((measured - b.first) / b.period).round();
+                let first = measured - n * b.period;
+                ((first - b.first).abs() <= 0.45 * b.period).then_some(first)
+            };
+            if r.at_end {
+                if let Some(current) = self.current.as_mut()
+                    && current.entry.track_id == r.track_id
+                    && let Some(b) = current.beats
+                    && let Some(first) = shifted(b)
+                {
+                    current.beats = Some(Beats { first, ..b });
+                }
+            } else if let Some(b) = self.beats(r.track_id)
+                && let Some(first) = shifted(b)
+            {
+                self.start_fix.insert(r.track_id, first);
+                // The next deck starts at its first beat: load it again from there.
+                self.preload_next();
+            }
+        }
+    }
+
     /// Whether `track_id` is the next track of `current`'s album (played gapless).
     fn follows_on_album(&self, current: &Loaded, track_id: i64) -> bool {
         match (current.album, self.album_pos(track_id)) {
@@ -1245,7 +1383,11 @@ impl Control {
         let (bpm, first_ms) = (bpm.filter(|b| *b > 0.0)?, first_ms?);
         let rate = f64::from(self.sample_rate);
         Some(Beats {
-            first: first_ms.max(0) as f64 * rate / 1000.0,
+            first: self
+                .start_fix
+                .get(&track_id)
+                .copied()
+                .unwrap_or(first_ms.max(0) as f64 * rate / 1000.0),
             period: 60.0 * rate / bpm,
         })
     }
@@ -1363,6 +1505,9 @@ impl Control {
 
     /// The crossfade the mixer should do out of the current deck, if any.
     fn wanted_plan(&self) -> Option<TransitionPlan> {
+        if let Some((plan, _)) = self.switching {
+            return Some(plan);
+        }
         let current = self.current.as_ref()?;
         let next = self.next.as_ref()?;
         if next.mix == Mix::Gapless || current.info.failure.get().is_some() {
@@ -1638,6 +1783,78 @@ impl Control {
         }
     }
 
+    /// Plays queue item `index` because the user chose it. While a track plays and the
+    /// switch mode says so, it fades over briefly instead of cutting.
+    fn switch_to(&mut self, index: usize) {
+        let fade = self.settings.switch_mode == SwitchMode::Fade
+            && self.status == Status::Playing
+            && self.current.as_ref().is_some_and(|c| c.info.failure.get().is_none());
+        let Some(entry) = self.queue.get(index) else {
+            return;
+        };
+        if !fade {
+            self.record_skip();
+            self.switching = None;
+            self.play_index(index, 0, true);
+            return;
+        }
+        let played = {
+            let current = self.current.as_ref().expect("current");
+            let length = current.duration_ms.unwrap_or(0);
+            self.position_ms() * 2 >= length
+        };
+        if !played {
+            self.record_skip();
+        }
+        let current = self.current.take();
+        let start_ms = self.audio_bounds(entry.track_id).0.unwrap_or(0);
+        let (loaded, input) = self.load(entry, start_ms, current.as_ref(), None);
+        self.current = current;
+        let token = self.current.as_ref().expect("current").token;
+        self.next = Some(loaded);
+        self.send_mixer(MixerCommand::SetNext(input));
+        // Positions arrive a little late: the fade starts at once and ends a little later
+        // than the nominal length after the last known position.
+        let rate = u64::from(self.sample_rate);
+        let now = self.position_frames;
+        let plan = TransitionPlan {
+            token,
+            start_frame: now,
+            end_frame: now + (SWITCH_FADE_MS + 150) * rate / 1000,
+            shape: TransitionShape::Crossfade,
+        };
+        self.switching = Some((plan, played));
+        self.plan_sent = Some(plan);
+        self.send_mixer(MixerCommand::SetTransition(plan));
+    }
+
+    fn replace_queue(&mut self, track_ids: Vec<i64>, start: usize) {
+        let fade = self.settings.switch_mode == SwitchMode::Fade
+            && self.status == Status::Playing
+            && self.current.is_some();
+        if !fade {
+            self.stop();
+            self.cursor = None;
+        }
+        self.queue.clear(&self.db);
+        if let Err(e) = self.queue.insert(&self.db, 0, &track_ids, "user") {
+            self.emit(Event::Error(e.to_string()));
+        }
+        self.emit(Event::Queue(self.queue.entries()));
+        if fade {
+            self.switch_to(start);
+        } else {
+            self.play_index(start, 0, true);
+        }
+        self.prioritize_analysis();
+    }
+
+    fn set_switch_mode(&mut self, mode: SwitchMode) {
+        self.settings.switch_mode = mode;
+        self.save_setting(SETTING_SWITCH_MODE, mode.name().to_string());
+        self.emit(Event::Settings(self.settings));
+    }
+
     fn set_smart_transitions(&mut self, on: bool) {
         if self.settings.smart_transitions == on {
             return;
@@ -1651,6 +1868,7 @@ impl Control {
     }
 
     fn stop(&mut self) {
+        self.switching = None;
         self.send_mixer(MixerCommand::Pause);
         self.send_mixer(MixerCommand::ClearCurrent);
         self.send_mixer(MixerCommand::ClearNext);
@@ -1776,7 +1994,9 @@ impl Control {
                     }
                 }
             }
-            Command::PlayIndex(i) => self.play_index(i, 0, true),
+            Command::PlayIndex(i) => self.switch_to(i),
+            Command::ReplaceQueue { track_ids, start } => self.replace_queue(track_ids, start),
+            Command::SetSwitchMode(mode) => self.set_switch_mode(mode),
             Command::Enqueue { track_ids, at } => {
                 let at = at.unwrap_or(self.queue.len());
                 if let Err(e) = self.queue.insert(&self.db, at, &track_ids, "user") {
@@ -2098,9 +2318,11 @@ impl Control {
         if self.next.as_ref().is_some_and(|l| l.token == token) {
             // Gapless switch or the start of a crossfade, done by the mixer. In a crossfade
             // the previous track is still fading out: it counts as played now, and its own
-            // end event (no longer current) is ignored.
+            // end event (no longer current) is ignored. A manual switch decided that itself.
+            let counts = self.switching.take().is_none_or(|(_, played)| played);
             if let Some(previous) = self.current.take()
                 && previous.info.failure.get().is_none()
+                && counts
             {
                 self.record_play(&previous);
             }

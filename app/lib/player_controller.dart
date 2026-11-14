@@ -188,21 +188,37 @@ class PlayerController extends ChangeNotifier {
   /// Where "play next" inserts: right after the current item.
   int get _afterCurrent => currentIndex == null ? queue.length : currentIndex! + 1;
 
+  /// While something plays and the user prefers it, a chosen track is queued to play next
+  /// instead of interrupting the current one.
+  bool get _queueInstead => isPlaying && settings?.switchMode == SwitchModeDto.queue;
+
   /// Plays a track now: it goes right after the current one, the queue stays.
   Future<void> playNow(TrackInfo t) async {
+    if (_queueInstead) return playNext([t]);
     remember([t]);
     final at = _afterCurrent;
     await enqueue(trackIds: _ids([t]), at: at);
     await playIndex(index: at);
   }
 
-  /// Replaces the queue with `tracks` and starts at `start` (album, artist, list).
+  /// Replaces the queue with `tracks` and starts at `start` (album, artist, list). The
+  /// engine fades over from what plays (or cuts, as set).
   Future<void> playAll(List<TrackInfo> tracks, {int start = 0}) async {
     if (tracks.isEmpty) return;
+    if (_queueInstead) return playNext(tracks.sublist(start));
     remember(tracks);
-    await clearQueue();
-    await enqueue(trackIds: _ids(tracks));
-    await playIndex(index: start);
+    await replaceQueue(trackIds: _ids(tracks), start: start);
+  }
+
+  /// A tap on a queue item: plays it (fading over), or with "queue" moves it up next.
+  Future<void> playQueueItem(int index) async {
+    final current = currentIndex;
+    if (_queueInstead && current != null && index > current + 1) {
+      await moveQueueItem(from: index, to: current + 1);
+      messages.add('Zahraje se jako další');
+      return;
+    }
+    await playIndex(index: index);
   }
 
   Future<void> playNext(List<TrackInfo> tracks) async {

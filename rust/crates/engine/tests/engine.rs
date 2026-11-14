@@ -760,13 +760,18 @@ fn upcoming_items_can_be_reordered_and_the_order_persists() {
 
 /// A mono WAV of 2 ms 2 kHz clicks at `beats` (seconds), silent otherwise.
 fn write_clicks(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>) {
+    write_bursts(path, seconds, beats, 2000.0, 0.002);
+}
+
+/// A mono WAV of `len_s` long sine bursts at `freq` Hz on `beats`, silent otherwise.
+fn write_bursts(path: &Path, seconds: f64, beats: impl Iterator<Item = f64>, freq: f64, len_s: f64) {
     let frames = (seconds * f64::from(RATE)) as usize;
     let mut pcm = vec![0i16; frames];
-    let click = (RATE / 500) as usize;
+    let click = (f64::from(RATE) * len_s) as usize;
     for t in beats {
         let at = (t * f64::from(RATE)).round() as usize;
         for i in 0..click.min(frames.saturating_sub(at)) {
-            let phase = 2.0 * std::f64::consts::PI * 2000.0 * i as f64 / f64::from(RATE);
+            let phase = 2.0 * std::f64::consts::PI * freq * i as f64 / f64::from(RATE);
             // Starts at a non-zero sample, so the click onset is exact.
             pcm[at + i] = (20_000.0 * (phase + 0.5).sin()) as i16;
         }
@@ -1250,3 +1255,125 @@ fn finished_plays_are_queued_for_scrobbling_once_a_token_is_set() {
         .unwrap();
     assert_eq!(queued, 2);
 }
+
+#[test]
+fn choosing_another_track_while_playing_fades_over() {
+    let dir = TempDir::new("switch-fade");
+    write_wav(&dir.music().join("a.wav"), 1, 8 * RATE);
+    write_wav(&dir.music().join("b.wav"), 2, 4 * RATE);
+    let id = scan(&dir);
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    wait_for(&engine, |e| matches!(e, Event::State(s) if s.status == Status::Playing));
+    std::thread::sleep(Duration::from_millis(150));
+    engine.send(Command::PlayIndex(1));
+    play_to_the_end(&engine);
+    engine.shutdown();
+
+    // Both tracks count up by one step per frame; while they are mixed they do not.
+    let out = captured_from_first_sound(&capture);
+    let step = 1.0 / 32768.0;
+    let mixed: Vec<bool> = out
+        .windows(2)
+        .map(|w| ((w[1] - w[0]) - step).abs() > step * 0.01 && w[0] != 0.0)
+        .collect();
+    let (mut longest, mut run) = (0usize, 0usize);
+    for &m in &mixed {
+        run = if m { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let seconds = longest as f64 / f64::from(RATE);
+    // 1.5 s nominal; at the null output's 8x speed the late position reports cost more
+    // audio than in real time.
+    assert!((1.0..1.8).contains(&seconds), "fade of {seconds} s");
+
+    let conn = open_writer(&dir.db()).unwrap();
+    let (skips, plays): (i64, i64) = conn
+        .query_row(
+            "SELECT skip_count, play_count FROM track WHERE id = ?1",
+            [id("a.wav")],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((skips, plays), (1, 0), "left early: a skip, not a play");
+}
+
+#[test]
+fn beats_are_aligned_where_the_mix_happens_even_with_an_imprecise_grid() {
+    let dir = TempDir::new("align");
+    // a: really 120 BPM (first beat 0.25 s), 40 ms bass bursts on every beat for 40 s.
+    write_bursts(
+        &dir.music().join("a.wav"),
+        40.0,
+        (0..80).map(|k| 0.25 + 0.5 * k as f64),
+        100.0,
+        0.04,
+    );
+    // b: really 124 BPM, first beat 0.4 s, short high clicks.
+    let b_beat = 60.0 / 124.0;
+    write_bursts(&dir.music().join("b.wav"), 30.0, (0..60).map(|k| 0.4 + b_beat * k as f64), 4000.0, 0.002);
+    let id = scan(&dir);
+    {
+        // The stored grids are slightly off: a's tempo by 0.1 BPM (about 25 ms off by
+        // the mix), b's first beat by 30 ms.
+        let conn = open_writer(&dir.db()).unwrap();
+        for (name, bpm, first) in [("a.wav", 120.1, 250), ("b.wav", 124.0, 430)] {
+            conn.execute(
+                "INSERT INTO analysis (track_id, algo_version, bpm, bpm_confidence,
+                                       first_beat_ms, analyzed_at)
+                 VALUES (?1, ?2, ?3, 1.0, ?4, 0)",
+                rusqlite::params![id(name), dap_engine::analyzer::ANALYSIS_ALGO, bpm, first],
+            )
+            .unwrap();
+        }
+    }
+    let capture = Arc::new(Mutex::new(Vec::new()));
+    let engine = start(&dir, Some(capture.clone()));
+    engine.send(Command::SetCrossfade { ms: 500 });
+    engine.send(Command::Enqueue {
+        track_ids: vec![id("a.wav"), id("b.wav")],
+        at: None,
+    });
+    engine.send(Command::Play);
+    let events = play_to_the_end(&engine);
+    engine.shutdown();
+
+    let start_ms = events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            Event::State(s) => s.transition.filter(|t| t.kind == TransitionKind::Beatmatch),
+            _ => None,
+        })
+        .expect("a beatmatch")
+        .start_ms;
+    // The transition starts on a real beat of a.
+    let off = ((start_ms as f64 / 1000.0 - 0.25) / 0.5).fract().abs();
+    assert!(off.min(1.0 - off) * 500.0 < 5.0, "transition at {start_ms} ms");
+
+    // b's clicks (the bass bursts barely pass a first difference) land on a's real beats.
+    let out = captured_from_first_sound(&capture);
+    let diff: Vec<f32> = out.windows(2).map(|w| w[1] - w[0]).collect();
+    let rate = f64::from(RATE);
+    // Index 0 is a's first beat (0.25 s into a).
+    let first = (start_ms as f64 / 1000.0 - 0.25) * rate;
+    for j in 2..12 {
+        let expected = first + j as f64 * 0.5 * rate;
+        let (lo, hi) = ((expected - 0.1 * rate) as usize, (expected + 0.1 * rate) as usize);
+        let peak = lo
+            + diff[lo..hi]
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+                .unwrap()
+                .0;
+        let ms = (peak as f64 - expected) / rate * 1000.0;
+        assert!(ms.abs() < 5.0, "b beat {j}: {ms:.1} ms off a's beat");
+    }
+}
+

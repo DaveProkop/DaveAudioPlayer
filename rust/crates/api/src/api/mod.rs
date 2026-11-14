@@ -1,3 +1,4 @@
+pub mod folders;
 pub mod library;
 pub mod metadata;
 pub mod player;

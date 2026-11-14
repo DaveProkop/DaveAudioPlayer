@@ -512,43 +512,54 @@ class NowPlayingView extends StatelessWidget {
           if (details?.energy != null) 'Energie ${(details!.energy! * 10).round()}/10',
           if (s?.eqEnabled ?? false) 'EQ zapnutý',
         ];
-        final info = Column(
+        // `compact` (phones): everything fits on one screen, lyrics open from the bar.
+        Widget info(bool compact) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(t.title, style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
+            Text(
+              t.title,
+              maxLines: compact ? 2 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
+              style: (compact ? theme.textTheme.headlineSmall : theme.textTheme.headlineMedium)?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 2),
             Text(
               [
                 t.artist,
                 if (t.album.isNotEmpty) t.album + (details?.year != null ? ' (${details!.year})' : ''),
               ].join(' · '),
+              maxLines: compact ? 1 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
               style: theme.textTheme.titleMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final f in facts)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(f, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 10 : 14),
+            if (compact)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final f in facts)
+                      Padding(padding: const EdgeInsets.only(right: 8), child: _FactChip(text: f)),
+                  ],
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final f in facts) _FactChip(text: f)],
+              ),
+            SizedBox(height: compact ? 2 : 8),
             _RatingStars(player: player, trackId: t.id, stars: details?.rating ?? 0),
             const SizedBox(height: 8),
             SeekBar(player: player, compact: true),
             const SizedBox(height: 8),
             Center(child: TransportButtons(player: player, large: true)),
             if (next != null) ...[
-              const SizedBox(height: 20),
+              SizedBox(height: compact ? 8 : 20),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(color: scheme.surfaceContainer, borderRadius: BorderRadius.circular(10)),
@@ -594,8 +605,10 @@ class NowPlayingView extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 12),
-            LyricsCard(key: ValueKey(t.id), player: player, trackId: t.id),
+            if (!compact) ...[
+              const SizedBox(height: 12),
+              LyricsCard(key: ValueKey(t.id), player: player, trackId: t.id),
+            ],
           ],
         );
         return Container(
@@ -614,15 +627,13 @@ class NowPlayingView extends StatelessWidget {
                   constraints: BoxConstraints(maxWidth: wide ? 400 : 360),
                   child: FlexCover(path: t.coverLarge, radius: 14, shadow: true),
                 );
-                final body = wide
-                    ? Row(
-                        children: [
-                          Expanded(flex: 5, child: Center(child: cover)),
-                          const SizedBox(width: 36),
-                          Expanded(flex: 6, child: info),
-                        ],
-                      )
-                    : Column(children: [cover, const SizedBox(height: 20), info]);
+                final body = Row(
+                  children: [
+                    Expanded(flex: 5, child: Center(child: cover)),
+                    const SizedBox(width: 36),
+                    Expanded(flex: 6, child: info(false)),
+                  ],
+                );
                 // The close bar stays at the top; the content is centred below it.
                 final bar = onClose == null
                     ? null
@@ -636,6 +647,24 @@ class NowPlayingView extends StatelessWidget {
                               tooltip: 'Zavřít',
                             ),
                             const Spacer(),
+                            if (!wide)
+                              IconButton(
+                                onPressed: () => showModalBottomSheet<void>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  showDragHandle: true,
+                                  builder: (_) => SafeArea(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                      child: SingleChildScrollView(
+                                        child: LyricsCard(key: ValueKey(t.id), player: player, trackId: t.id),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.lyrics_outlined),
+                                tooltip: 'Text písně',
+                              ),
                             if (onOpenEq != null)
                               IconButton(onPressed: onOpenEq, icon: const Icon(Icons.equalizer), tooltip: 'Ekvalizér'),
                             if (onOpenQueue != null)
@@ -648,6 +677,33 @@ class NowPlayingView extends StatelessWidget {
                         ),
                       );
                 final barHeight = bar == null ? 0.0 : 52.0;
+                if (!wide) {
+                  // Phones: no scrolling, the cover takes what the rest leaves.
+                  return Column(
+                    children: [
+                      ?bar,
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(20, bar == null ? 16 : 0, 20, 12),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: AspectRatio(
+                                    aspectRatio: 1,
+                                    child: FlexCover(path: t.coverLarge, radius: 14, shadow: true),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              info(true),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
                 return Column(
                   children: [
                     ?bar,
@@ -901,6 +957,22 @@ class _RatingStars extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _FactChip extends StatelessWidget {
+  const _FactChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(6)),
+      child: Text(text, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
     );
   }
 }

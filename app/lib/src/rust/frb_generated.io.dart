@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/folders.dart';
 import 'api/library.dart';
 import 'api/metadata.dart';
 import 'api/player.dart';
@@ -96,7 +97,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FolderEntry dco_decode_folder_entry(dynamic raw);
+
+  @protected
   FolderInfo dco_decode_folder_info(dynamic raw);
+
+  @protected
+  FolderListing dco_decode_folder_listing(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -118,6 +125,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ArtistInfo> dco_decode_list_artist_info(dynamic raw);
+
+  @protected
+  List<FolderEntry> dco_decode_list_folder_entry(dynamic raw);
 
   @protected
   List<FolderInfo> dco_decode_list_folder_info(dynamic raw);
@@ -253,6 +263,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScrobbleStatus dco_decode_scrobble_status(dynamic raw);
 
   @protected
+  SwitchModeDto dco_decode_switch_mode_dto(dynamic raw);
+
+  @protected
   TopItem dco_decode_top_item(dynamic raw);
 
   @protected
@@ -368,7 +381,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FolderEntry sse_decode_folder_entry(SseDeserializer deserializer);
+
+  @protected
   FolderInfo sse_decode_folder_info(SseDeserializer deserializer);
+
+  @protected
+  FolderListing sse_decode_folder_listing(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -390,6 +409,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ArtistInfo> sse_decode_list_artist_info(SseDeserializer deserializer);
+
+  @protected
+  List<FolderEntry> sse_decode_list_folder_entry(SseDeserializer deserializer);
 
   @protected
   List<FolderInfo> sse_decode_list_folder_info(SseDeserializer deserializer);
@@ -549,6 +571,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScrobbleStatus sse_decode_scrobble_status(SseDeserializer deserializer);
 
   @protected
+  SwitchModeDto sse_decode_switch_mode_dto(SseDeserializer deserializer);
+
+  @protected
   TopItem sse_decode_top_item(SseDeserializer deserializer);
 
   @protected
@@ -686,7 +711,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_folder_entry(FolderEntry self, SseSerializer serializer);
+
+  @protected
   void sse_encode_folder_info(FolderInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_folder_listing(FolderListing self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -712,6 +743,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_artist_info(
     List<ArtistInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_folder_entry(
+    List<FolderEntry> self,
     SseSerializer serializer,
   );
 
@@ -924,6 +961,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ScrobbleStatus self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_switch_mode_dto(SwitchModeDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_top_item(TopItem self, SseSerializer serializer);

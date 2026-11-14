@@ -102,6 +102,11 @@ Ověřeno na Androidu (Samsung Galaxy A53, Android 16): start jádra (AAudio př
 přehrávání se zhasnutým displejem, výběr složek z MediaStore i SD karty.
 Release 0.2.0 (Windows zip, podepsané APK) je v `dist/` a běží na telefonu. Na Androidu se C++ runtime
 (`dap-stretch`) linkuje staticky (`c++_static`), APK nemá `libc++_shared.so`.
+Místní zarovnání dob před beat přechodem (vlákno `aligner`: fáze z krátkého okna u konce
+odcházející a u první doby příchozí, zpřesněná na nástupy ve zvuku; ±3 ms i s chybou tempa
+0,1 BPM). Výběr jiné skladby během hraní: prolnout 1,5 s / hned / jako další
+(`player.switch_mode`, `ReplaceQueue`). Procházení podle složek, potvrzení vyprázdnění
+fronty, délka přechodu v nastavení, „Právě hraje“ na mobilu bez posouvání.
 Chytré playlisty (`dap_library::smart`: pravidla JSON v `playlist.rules`, jen povolená pole,
 hodnoty jako SQL parametry), hodnocení 0–5 hvězd (`track.rating` = 2×), přeskočení
 (Next v 1. polovině → `skip_count` + `play_history.skipped`), stránka Statistiky.

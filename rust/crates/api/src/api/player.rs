@@ -10,7 +10,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use dap_dsp::eq::BAND_COUNT;
 use dap_engine::{
     Command, Engine, EngineConfig, Event, MixMode, OutputConfig, PlayerState, Status,
-    TransitionKind,
+    SwitchMode, TransitionKind,
 };
 use flutter_rust_bridge::frb;
 use rusqlite::Connection;
@@ -245,6 +245,23 @@ pub fn set_output_device(name: Option<String>) -> Result<()> {
     send(Command::SetOutputDevice(name))
 }
 
+pub fn set_switch_mode(mode: SwitchModeDto) -> Result<()> {
+    send(Command::SetSwitchMode(match mode {
+        SwitchModeDto::Fade => SwitchMode::Fade,
+        SwitchModeDto::Cut => SwitchMode::Cut,
+        SwitchModeDto::Queue => SwitchMode::Queue,
+    }))
+}
+
+/// Replaces the queue with tracks and plays item `start` (an album, a list). While
+/// something plays, the switch follows the switch mode (a short fade by default).
+pub fn replace_queue(track_ids: Vec<i64>, start: u32) -> Result<()> {
+    send(Command::ReplaceQueue {
+        track_ids,
+        start: start as usize,
+    })
+}
+
 /// Switches the mix mode: its crossfade, its kinds of transitions and its mix ordering.
 pub fn set_mix_mode(mode: MixModeDto) -> Result<()> {
     send(Command::SetMixMode(match mode {
@@ -440,9 +457,20 @@ pub enum MixModeDto {
     Chill,
 }
 
+/// What choosing another track does while one is playing.
+pub enum SwitchModeDto {
+    /// A short crossfade into the chosen track.
+    Fade,
+    /// Straight over.
+    Cut,
+    /// The chosen track plays after the current one (the UI queues it).
+    Queue,
+}
+
 /// Playback preferences as stored by the engine.
 pub struct PlayerSettingsDto {
     pub mix_mode: MixModeDto,
+    pub switch_mode: SwitchModeDto,
     pub crossfade_ms: u32,
     pub normalize: bool,
     pub smart_transitions: bool,
@@ -544,6 +572,11 @@ fn to_dto(event: Event) -> AppEvent {
         },
         Event::Settings(s) => AppEvent {
             settings: Some(PlayerSettingsDto {
+                switch_mode: match s.switch_mode {
+                    SwitchMode::Fade => SwitchModeDto::Fade,
+                    SwitchMode::Cut => SwitchModeDto::Cut,
+                    SwitchMode::Queue => SwitchModeDto::Queue,
+                },
                 mix_mode: match s.mix_mode {
                     MixMode::Album => MixModeDto::Album,
                     MixMode::Radio => MixModeDto::Radio,

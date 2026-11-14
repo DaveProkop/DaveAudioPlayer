@@ -62,7 +62,7 @@ class QueueView extends StatelessWidget {
                     IconButton(
                       tooltip: 'Vyprázdnit frontu',
                       icon: const Icon(Icons.clear_all),
-                      onPressed: queue.isEmpty ? null : () => rust.clearQueue(),
+                      onPressed: queue.isEmpty ? null : () => _confirmClear(context, queue.length),
                     ),
                   ],
                 ),
@@ -132,7 +132,7 @@ class QueueView extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(8),
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(8),
-                                    onTap: () => rust.playIndex(index: i),
+                                    onTap: () => player.playQueueItem(i),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                                       child: Row(
@@ -339,4 +339,21 @@ Future<void> showMixSuggestion(BuildContext context, PlayerController player) as
     return;
   }
   await rust.reorderUpcoming(itemIds: Int64List.fromList(ids));
+}
+
+/// Clearing the queue stops playback and cannot be undone: ask first.
+Future<void> _confirmClear(BuildContext context, int count) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: const Text('Vyprázdnit frontu?'),
+      content: Text('Z fronty zmizí ${tracksLabel(count)} a přehrávání se zastaví. '
+          'Skladby v knihovně zůstanou.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Zrušit')),
+        FilledButton(onPressed: () => Navigator.of(dialog).pop(true), child: const Text('Vyprázdnit')),
+      ],
+    ),
+  );
+  if (ok == true) await rust.clearQueue();
 }

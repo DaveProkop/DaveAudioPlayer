@@ -111,6 +111,48 @@ class SettingsPage extends StatelessWidget {
                         onSelectionChanged: s == null ? null : (v) => rust.setMixMode(mode: v.first),
                       ),
                     ),
+                    ListTile(
+                      title: const Text('Při výběru jiné skladby'),
+                      subtitle: Text(switch (s?.switchMode) {
+                        rust.SwitchModeDto.cut => 'Přepne se hned.',
+                        rust.SwitchModeDto.queue => 'Zahraje se po té, co právě hraje.',
+                        _ => 'Krátce se prolne (1,5 s).',
+                      }),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: SegmentedButton<rust.SwitchModeDto>(
+                        segments: const [
+                          ButtonSegment(value: rust.SwitchModeDto.fade, label: Text('Prolnout')),
+                          ButtonSegment(value: rust.SwitchModeDto.cut, label: Text('Hned')),
+                          ButtonSegment(value: rust.SwitchModeDto.queue, label: Text('Jako další')),
+                        ],
+                        selected: {s?.switchMode ?? rust.SwitchModeDto.fade},
+                        showSelectedIcon: false,
+                        onSelectionChanged: s == null ? null : (v) => rust.setSwitchMode(mode: v.first),
+                      ),
+                    ),
+                    if (s != null && s.mixMode != rust.MixModeDto.album) ...[
+                      ListTile(
+                        title: const Text('Délka přechodu'),
+                        subtitle: const Text(
+                          'Prolnutí a přechod filtrem. Beatmatch trvá vždy 16 dob (jednu frázi), '
+                          'střih na dobu je okamžitý.',
+                        ),
+                        trailing: Text('${(s.crossfadeMs / 1000).round()} s'),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 16, 8),
+                        child: Slider(
+                          value: (s.crossfadeMs / 1000).clamp(1, 12).toDouble(),
+                          min: 1,
+                          max: 12,
+                          divisions: 11,
+                          label: '${(s.crossfadeMs / 1000).round()} s',
+                          onChanged: (v) => rust.setCrossfade(ms: v.round() * 1000),
+                        ),
+                      ),
+                    ],
                     LibraryFuture<LibraryStats>(
                       player: player,
                       load: libraryStats,

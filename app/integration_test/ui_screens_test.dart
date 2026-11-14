@@ -241,6 +241,12 @@ void main() {
     await shot('desktop_smart_playlist');
     await tapText('Statistiky');
     await shot('desktop_stats');
+    await tapText('Složky');
+    await tester.tap(find.byIcon(Icons.folder_outlined).last);
+    await settle();
+    await tester.tap(find.widgetWithText(ListTile, 'Polární záře'));
+    await settle();
+    await shot('desktop_folders');
 
     // Smart Mix: the whole library in the queue, then the proposed order.
     await tester.runAsync(() async {

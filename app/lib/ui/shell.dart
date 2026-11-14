@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../player_controller.dart';
 import 'eq_page.dart';
+import 'folders_page.dart';
 import 'library_pages.dart';
 import 'player.dart';
 import 'playlists.dart';
@@ -12,7 +13,7 @@ import 'settings_page.dart';
 import 'stats_page.dart';
 import 'theme.dart';
 
-enum Section { tracks, albums, artists, playlists, stats, nowPlaying, eq, settings }
+enum Section { tracks, albums, artists, folders, playlists, stats, nowPlaying, eq, settings }
 
 /// Width from which the desktop layout (side navigation + player bar) is used.
 const desktopBreakpoint = 900.0;
@@ -84,6 +85,7 @@ class _AppShellState extends State<AppShell> {
     Section.tracks => TracksPage(player: player),
     Section.albums => AlbumsPage(player: player),
     Section.artists => ArtistsPage(player: player),
+    Section.folders => FoldersPage(player: player),
     Section.playlists => PlaylistsPage(player: player),
     Section.stats => StatsPage(player: player),
     Section.nowPlaying => NowPlayingView(player: player),
@@ -288,7 +290,7 @@ class _LibraryHomeState extends State<_LibraryHome> {
       child: Wrap(
         spacing: 6,
         children: [
-          for (final (i, label) in const ['Skladby', 'Alba', 'Interpreti', 'Playlisty'].indexed)
+          for (final (i, label) in const ['Skladby', 'Alba', 'Interpreti', 'Složky', 'Playlisty'].indexed)
             ChoiceChip(label: Text(label), selected: _view == i, onSelected: (_) => setState(() => _view = i)),
         ],
       ),
@@ -296,7 +298,8 @@ class _LibraryHomeState extends State<_LibraryHome> {
     return switch (_view) {
       1 => AlbumsPage(player: widget.player, header: header),
       2 => ArtistsPage(player: widget.player, header: header),
-      3 => PlaylistsPage(player: widget.player, header: header),
+      3 => FoldersPage(player: widget.player, header: header),
+      4 => PlaylistsPage(player: widget.player, header: header),
       _ => TracksPage(player: widget.player, header: header),
     };
   }
@@ -372,6 +375,7 @@ class _SideNav extends StatelessWidget {
           item(Section.tracks, Icons.music_note_outlined, 'Skladby'),
           item(Section.albums, Icons.album_outlined, 'Alba'),
           item(Section.artists, Icons.person_outline, 'Interpreti'),
+          item(Section.folders, Icons.folder_outlined, 'Složky'),
           item(Section.playlists, Icons.queue_music, 'Playlisty'),
           item(Section.stats, Icons.insights, 'Statistiky'),
           const Padding(padding: EdgeInsets.symmetric(vertical: 10, horizontal: 6), child: Divider()),

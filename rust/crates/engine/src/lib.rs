@@ -8,6 +8,7 @@
 //! - loudness analysis (`analysis`): EBU R128 measurement of upcoming and other tracks
 //! - folder watching (`folder-watch`): rescans library folders that changed
 
+pub mod aligner;
 pub mod analyzer;
 pub mod db_writer;
 mod deck;
@@ -19,7 +20,7 @@ pub mod watcher;
 pub use db_writer::DbWriter;
 pub use engine::{
     Command, DEFAULT_CROSSFADE_MS, Engine, EngineConfig, Event, MAX_CROSSFADE_MS, MixMode,
-    PlayerSettings, PlayerState, SETTING_OUTPUT_DEVICE, ScanSummary, Status, TransitionKind,
+    PlayerSettings, PlayerState, SETTING_OUTPUT_DEVICE, ScanSummary, Status, SwitchMode, TransitionKind,
     UpcomingTransition,
 };
 pub use output::{OutputConfig, output_devices};

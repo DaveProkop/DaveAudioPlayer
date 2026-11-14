@@ -232,6 +232,32 @@ impl TempoDetector {
     }
 }
 
+impl TempoDetector {
+    /// Where beats `period_s` apart fall in the audio pushed so far: the time (seconds
+    /// from the first pushed frame) of the first one. For aligning a known tempo locally,
+    /// at a mix point, where a whole-track grid may have drifted. `None` without onsets.
+    pub fn beat_phase(&self, period_s: f64) -> Option<f64> {
+        let fr = self.frame_rate;
+        let n = self.envelope.len();
+        if n < (fr * 2.0) as usize || period_s <= 0.0 {
+            return None;
+        }
+        let env = rhythmic(&self.envelope, fr);
+        let energy: f64 = env.iter().map(|v| v * v).sum();
+        if energy <= 0.0 {
+            return None;
+        }
+        let low = rhythmic(&self.low_envelope, fr);
+        let env = if low.iter().map(|v| v * v).sum::<f64>() > energy * 0.01 {
+            low
+        } else {
+            env
+        };
+        let p = phase(&env, 0.0, n as f64, period_s * fr);
+        Some((p * HOP as f64 + FRAME as f64 / 2.0) / (fr * HOP as f64))
+    }
+}
+
 /// The rhythmic part of an onset envelope: minus its moving average (~0.5 s), no negatives.
 fn rhythmic(envelope: &[f32], fr: f64) -> Vec<f64> {
     let n = envelope.len();
@@ -368,6 +394,19 @@ mod tests {
             "drift {} s",
             predicted - actual
         );
+    }
+
+    #[test]
+    fn local_beat_phase() {
+        // 12 s at 128 BPM after 0.3 s of silence: the beats fall at 0.3 s + k beats.
+        let mut audio = vec![0.0f32; (f64::from(RATE) * 0.3) as usize * 2];
+        audio.extend(pattern(128.0, 12.0));
+        let mut d = TempoDetector::new(RATE, 2);
+        d.push(&audio);
+        let period = 60.0 / 128.0;
+        let local = d.beat_phase(period).unwrap();
+        let off = (local - 0.3).rem_euclid(period);
+        assert!(off.min(period - off) < 0.01, "beat at {local} s");
     }
 
     #[test]
