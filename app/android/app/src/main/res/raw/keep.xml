@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds drop resources the code only names in strings: the playback
+     notification icon is passed to audio_service by name (lib/media_session.dart). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_music" />
